@@ -10,7 +10,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { DollarSign, CreditCard, CheckCircle, XCircle } from "lucide-react";
+import { DollarSign, CreditCard, CheckCircle, XCircle, Smartphone } from "lucide-react";
+import MpesaPayment from "@/components/MpesaPayment";
+import { usePayments } from "@/hooks/usePayments";
+import { usePaymentHistory } from "@/hooks/usePaymentHistory";
 
 interface PaymentTransaction {
   id: string;
@@ -165,9 +168,21 @@ const Payments: React.FC = () => {
   const [addAmount, setAddAmount] = useState<number>(0);
   const [showWithdrawDialog, setShowWithdrawDialog] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState<number>(0);
+  const [showMpesaDialog, setShowMpesaDialog] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<string>('card');
+  
+  const { convertUsdToKes } = usePayments();
+  const { handleMpesaPaymentComplete, stats: paymentStats } = usePaymentHistory();
   
   const addFunds = () => {
     if (addAmount > 0 && user) {
+      if (paymentMethod === 'mpesa') {
+        setShowMpesaDialog(true);
+        setShowAddFundsDialog(false);
+        return;
+      }
+      
+      // Card payment logic (existing)
       updateUserBalance(addAmount);
       
       const newTransaction: PaymentTransaction = {
@@ -176,7 +191,7 @@ const Payments: React.FC = () => {
         description: "Deposit to account",
         amount: addAmount,
         status: "completed",
-        counterparty: "Bank Account",
+        counterparty: paymentMethod === 'mpesa' ? "M-Pesa" : "Bank Account",
         type: "incoming"
       };
       
@@ -190,6 +205,40 @@ const Payments: React.FC = () => {
       setShowAddFundsDialog(false);
       setAddAmount(0);
     }
+  };
+
+  const handleMpesaSuccess = async (response: any) => {
+    try {
+      // Update user balance
+      updateUserBalance(addAmount);
+      
+      // Record payment in database
+      await handleMpesaPaymentComplete(response, addAmount);
+      
+      // Add to local transaction history
+      const newTransaction: PaymentTransaction = {
+        id: response.tx_ref || `mpesa-${Date.now()}`,
+        date: new Date().toISOString().split('T')[0],
+        description: "M-Pesa deposit to account",
+        amount: addAmount,
+        status: "completed",
+        counterparty: "M-Pesa",
+        type: "incoming"
+      };
+      
+      setTransactions([newTransaction, ...transactions]);
+      setShowMpesaDialog(false);
+      setAddAmount(0);
+    } catch (error) {
+      console.error('Error handling M-Pesa success:', error);
+      // Still update UI even if database recording fails
+      updateUserBalance(addAmount);
+    }
+  };
+
+  const handleMpesaError = (error: any) => {
+    console.error('M-Pesa payment error:', error);
+    setShowMpesaDialog(false);
   };
   
   const withdrawFunds = () => {
@@ -463,20 +512,70 @@ const Payments: React.FC = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="card">Card Details</Label>
-              <div className="flex items-center border rounded-md p-3 bg-muted/30">
-                <CreditCard className="mr-2" />
-                <span>•••• •••• •••• 4242</span>
+              <Label>Payment Method</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  type="button"
+                  variant={paymentMethod === 'card' ? 'default' : 'outline'}
+                  onClick={() => setPaymentMethod('card')}
+                  className="h-auto p-4 flex flex-col items-center gap-2"
+                >
+                  <CreditCard className="w-6 h-6" />
+                  <span>Card Payment</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant={paymentMethod === 'mpesa' ? 'default' : 'outline'}
+                  onClick={() => setPaymentMethod('mpesa')}
+                  className="h-auto p-4 flex flex-col items-center gap-2 bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+                >
+                  <Smartphone className="w-6 h-6" />
+                  <span>M-Pesa</span>
+                </Button>
               </div>
-              <p className="text-sm text-muted-foreground mt-1">
-                Demo Mode: No real payment will be processed
-              </p>
             </div>
+
+            {paymentMethod === 'card' && (
+              <div className="space-y-2">
+                <Label htmlFor="card">Card Details</Label>
+                <div className="flex items-center border rounded-md p-3 bg-muted/30">
+                  <CreditCard className="mr-2" />
+                  <span>•••• •••• •••• 4242</span>
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Demo Mode: No real payment will be processed
+                </p>
+              </div>
+            )}
+
+            {paymentMethod === 'mpesa' && (
+              <div className="space-y-2">
+                <Label>M-Pesa Payment</Label>
+                <div className="flex items-center border rounded-md p-3 bg-green-50 border-green-200">
+                  <Smartphone className="mr-2 text-green-600" />
+                  <span>Pay securely with M-Pesa mobile money</span>
+                </div>
+                <div className="text-sm text-green-700 bg-green-50 p-3 rounded">
+                  <p><strong>Amount in KES:</strong> KES {convertUsdToKes(addAmount).toLocaleString()}</p>
+                  <p className="text-xs mt-1">You'll be redirected to complete payment via M-Pesa</p>
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddFundsDialog(false)}>Cancel</Button>
             <Button onClick={addFunds} disabled={addAmount <= 0}>
-              Add Funds
+              {paymentMethod === 'mpesa' ? (
+                <>
+                  <Smartphone className="w-4 h-4 mr-2" />
+                  Pay with M-Pesa
+                </>
+              ) : (
+                <>
+                  <CreditCard className="w-4 h-4 mr-2" />
+                  Add Funds
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -526,6 +625,30 @@ const Payments: React.FC = () => {
               Withdraw Funds
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* M-Pesa Payment Dialog */}
+      <Dialog open={showMpesaDialog} onOpenChange={setShowMpesaDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Smartphone className="w-5 h-5 text-green-600" />
+              M-Pesa Payment
+            </DialogTitle>
+            <DialogDescription>
+              Complete your payment using M-Pesa mobile money
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <MpesaPayment
+              amount={addAmount}
+              currency="USD"
+              description={`Account deposit - $${addAmount}`}
+              onSuccess={handleMpesaSuccess}
+              onError={handleMpesaError}
+            />
+          </div>
         </DialogContent>
       </Dialog>
     </DashboardLayout>

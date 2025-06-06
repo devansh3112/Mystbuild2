@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { useAuth, UserRole } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
@@ -11,7 +10,7 @@ const Login: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const { login, setDemoUser } = useAuth();
+  const { login, setDemoUser, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -22,8 +21,15 @@ const Login: React.FC = () => {
       await login(email, password);
       toast.success("Login successful!");
       navigate("/dashboard");
-    } catch (error) {
-      toast.error("Login failed. Please try again.");
+    } catch (error: any) {
+      // Display appropriate error messages based on error type
+      if (error.message === "Invalid login credentials") {
+        toast.error("Invalid email or password. Please try again.");
+      } else if (error.message.includes("rate limit")) {
+        toast.error("Too many login attempts. Please try again later.");
+      } else {
+        toast.error("Login failed. Please try again.");
+      }
       console.error(error);
     } finally {
       setIsLoading(false);
@@ -79,8 +85,8 @@ const Login: React.FC = () => {
                   required
                 />
               </div>
-              <Button className="w-full bg-brand-red hover:bg-brand-red/90" type="submit" disabled={isLoading}>
-                {isLoading ? "Signing in..." : "Sign In"}
+              <Button className="w-full bg-brand-red hover:bg-brand-red/90" type="submit" disabled={isLoading || authLoading}>
+                {(isLoading || authLoading) ? "Signing in..." : "Sign In"}
               </Button>
             </form>
           </CardContent>

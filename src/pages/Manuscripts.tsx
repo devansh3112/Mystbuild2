@@ -22,82 +22,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { useManuscriptList } from "@/hooks/useManuscriptList";
+import { Link } from "react-router-dom";
 
-// Mock data for manuscripts
-const manuscriptData = [
-  {
-    id: "ms-001",
-    title: "The Lost Chapter",
-    writer: "Sarah Johnson",
-    editor: "Mark Davis",
-    genre: "Mystery",
-    progress: 75,
-    wordCount: 78000,
-    status: "In Progress",
-    acquisitionDate: "2025-03-15",
-    completionDate: "2025-06-20",
-  },
-  {
-    id: "ms-002",
-    title: "Beyond the Stars",
-    writer: "Michael Chen",
-    editor: "Unassigned",
-    genre: "Science Fiction",
-    progress: 10,
-    wordCount: 92000,
-    status: "New",
-    acquisitionDate: "2025-05-02",
-    completionDate: "2025-08-30",
-  },
-  {
-    id: "ms-003",
-    title: "Shadows of Tomorrow",
-    writer: "Elena Rodriguez",
-    editor: "Priya Sharma",
-    genre: "Thriller",
-    progress: 100,
-    wordCount: 68500,
-    status: "Completed",
-    acquisitionDate: "2025-02-10",
-    completionDate: "2025-04-30",
-  },
-  {
-    id: "ms-004",
-    title: "Whispers in the Dark",
-    writer: "David Wilson",
-    editor: "Mark Davis",
-    genre: "Horror",
-    progress: 60,
-    wordCount: 71200,
-    status: "In Progress",
-    acquisitionDate: "2025-03-25",
-    completionDate: "2025-06-15",
-  },
-  {
-    id: "ms-005",
-    title: "The Emerald Crown",
-    writer: "Jessica Lee",
-    editor: "James Wilson",
-    genre: "Fantasy",
-    progress: 40,
-    wordCount: 105000,
-    status: "In Progress",
-    acquisitionDate: "2025-04-05",
-    completionDate: "2025-07-20",
-  },
-  {
-    id: "ms-006",
-    title: "Midnight Secrets",
-    writer: "Robert Taylor",
-    editor: "Priya Sharma",
-    genre: "Mystery",
-    progress: 90,
-    wordCount: 84300,
-    status: "Review",
-    acquisitionDate: "2025-02-28",
-    completionDate: "2025-05-10",
-  },
-];
+// Feature flag to control whether we use real or mock data
+const USE_SUPABASE_DATA = true;
 
 const ManuscriptsPage: React.FC = () => {
   const { user } = useAuth();
@@ -105,26 +34,31 @@ const ManuscriptsPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [genreFilter, setGenreFilter] = useState("all");
 
+  // Use the manuscript list hook with feature flag
+  const { manuscripts, isLoading, error } = useManuscriptList({
+    useRealData: USE_SUPABASE_DATA,
+    status: statusFilter !== "all" ? statusFilter : null,
+    orderBy: "submission_date",
+    orderDirection: { ascending: false }
+  });
+
   // Get filtered manuscripts based on search and filters
   const getFilteredManuscripts = () => {
-    return manuscriptData.filter((manuscript) => {
+    if (!manuscripts) return [];
+    
+    return manuscripts.filter((manuscript) => {
       // Search term filter
       const matchesSearch = 
         manuscript.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        manuscript.writer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        manuscript.editor.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      // Status filter
-      const matchesStatus = 
-        statusFilter === "all" || 
-        manuscript.status.toLowerCase() === statusFilter.toLowerCase();
+        (manuscript.author && manuscript.author.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (manuscript.editor && manuscript.editor.toLowerCase().includes(searchTerm.toLowerCase()));
       
       // Genre filter
       const matchesGenre = 
         genreFilter === "all" || 
-        manuscript.genre.toLowerCase() === genreFilter.toLowerCase();
+        (manuscript.genre && manuscript.genre.toLowerCase() === genreFilter.toLowerCase());
       
-      return matchesSearch && matchesStatus && matchesGenre;
+      return matchesSearch && matchesGenre;
     });
   };
 
@@ -140,23 +74,58 @@ const ManuscriptsPage: React.FC = () => {
 
   // Function to get status badge
   const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "Completed":
-        return <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">Completed</Badge>;
-      case "In Progress":
+    switch (status?.toLowerCase()) {
+      case "published":
+        return <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">Published</Badge>;
+      case "approved":
+        return <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200">Approved</Badge>;
+      case "under_review":
+        return <Badge variant="outline" className="bg-violet-100 text-violet-800 border-violet-200">Under Review</Badge>;
+      case "submitted":
+        return <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200">Submitted</Badge>;
+      case "in_progress":
         return <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200">In Progress</Badge>;
-      case "New":
-        return <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-200">New</Badge>;
-      case "Review":
-        return <Badge variant="outline" className="bg-violet-100 text-violet-800 border-violet-200">In Review</Badge>;
+      case "revision_requested":
+        return <Badge variant="outline" className="bg-orange-100 text-orange-800 border-orange-200">Revision Requested</Badge>;
+      case "draft":
+        return <Badge variant="outline" className="bg-gray-100 text-gray-800 border-gray-200">Draft</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
   };
 
+  // Calculate statistics
+  const totalManuscripts = manuscripts?.length || 0;
+  const inProgressCount = manuscripts?.filter(m => m.status === "in_progress").length || 0;
+  const completedCount = manuscripts?.filter(m => m.status === "published" || m.status === "approved").length || 0;
+  const uniqueEditors = new Set(manuscripts?.map(m => m.editor).filter(e => e && e !== 'To be determined')).size;
+
+  if (isLoading) {
+    return (
+      <DashboardLayout role="publisher">
+        <div className="flex items-center justify-center h-64">
+          <div className="flex items-center space-x-2">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+            <p className="text-muted-foreground">Loading manuscripts...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout role="publisher">
+        <div className="flex items-center justify-center h-64">
+          <p className="text-red-500">Error loading manuscripts: {error}</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout role="publisher">
-      <div className="space-y-6 animate-fade-in">
+      <div className="space-y-6">
         <div className="flex flex-wrap justify-between items-center gap-4">
           <div>
             <h1 className="text-3xl font-bold">Manuscripts</h1>
@@ -178,7 +147,7 @@ const ManuscriptsPage: React.FC = () => {
                 <div className="bg-admin-primary/10 w-12 h-12 flex items-center justify-center rounded-full mb-3">
                   <BookOpen className="text-admin-primary" />
                 </div>
-                <h3 className="font-semibold text-2xl">{manuscriptData.length}</h3>
+                <h3 className="font-semibold text-2xl">{totalManuscripts}</h3>
                 <p className="text-muted-foreground">Total Manuscripts</p>
               </div>
             </CardContent>
@@ -190,9 +159,7 @@ const ManuscriptsPage: React.FC = () => {
                 <div className="bg-admin-primary/10 w-12 h-12 flex items-center justify-center rounded-full mb-3">
                   <FileText className="text-admin-primary" />
                 </div>
-                <h3 className="font-semibold text-2xl">
-                  {manuscriptData.filter(m => m.status === "In Progress").length}
-                </h3>
+                <h3 className="font-semibold text-2xl">{inProgressCount}</h3>
                 <p className="text-muted-foreground">In Progress</p>
               </div>
             </CardContent>
@@ -204,9 +171,7 @@ const ManuscriptsPage: React.FC = () => {
                 <div className="bg-admin-primary/10 w-12 h-12 flex items-center justify-center rounded-full mb-3">
                   <Users className="text-admin-primary" />
                 </div>
-                <h3 className="font-semibold text-2xl">
-                  {new Set(manuscriptData.map(m => m.editor)).size}
-                </h3>
+                <h3 className="font-semibold text-2xl">{uniqueEditors}</h3>
                 <p className="text-muted-foreground">Active Editors</p>
               </div>
             </CardContent>
@@ -218,9 +183,7 @@ const ManuscriptsPage: React.FC = () => {
                 <div className="bg-admin-primary/10 w-12 h-12 flex items-center justify-center rounded-full mb-3">
                   <BookOpen className="text-admin-primary" />
                 </div>
-                <h3 className="font-semibold text-2xl">
-                  {manuscriptData.filter(m => m.status === "Completed").length}
-                </h3>
+                <h3 className="font-semibold text-2xl">{completedCount}</h3>
                 <p className="text-muted-foreground">Completed</p>
               </div>
             </CardContent>
@@ -252,10 +215,13 @@ const ManuscriptsPage: React.FC = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Statuses</SelectItem>
-                    <SelectItem value="new">New</SelectItem>
-                    <SelectItem value="in progress">In Progress</SelectItem>
-                    <SelectItem value="review">In Review</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="submitted">Submitted</SelectItem>
+                    <SelectItem value="under_review">Under Review</SelectItem>
+                    <SelectItem value="revision_requested">Revision Requested</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="published">Published</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
                   </SelectContent>
                 </Select>
 
@@ -265,11 +231,19 @@ const ManuscriptsPage: React.FC = () => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Genres</SelectItem>
-                    <SelectItem value="mystery">Mystery</SelectItem>
-                    <SelectItem value="science fiction">Science Fiction</SelectItem>
-                    <SelectItem value="thriller">Thriller</SelectItem>
-                    <SelectItem value="horror">Horror</SelectItem>
-                    <SelectItem value="fantasy">Fantasy</SelectItem>
+                    <SelectItem value="psychological thriller">Psychological Thriller</SelectItem>
+                    <SelectItem value="cozy mystery">Cozy Mystery</SelectItem>
+                    <SelectItem value="art crime mystery">Art Crime Mystery</SelectItem>
+                    <SelectItem value="police procedural">Police Procedural</SelectItem>
+                    <SelectItem value="cultural mystery">Cultural Mystery</SelectItem>
+                    <SelectItem value="cyber crime">Cyber Crime</SelectItem>
+                    <SelectItem value="tech thriller">Tech Thriller</SelectItem>
+                    <SelectItem value="historical mystery">Historical Mystery</SelectItem>
+                    <SelectItem value="period mystery">Period Mystery</SelectItem>
+                    <SelectItem value="gothic mystery">Gothic Mystery</SelectItem>
+                    <SelectItem value="supernatural mystery">Supernatural Mystery</SelectItem>
+                    <SelectItem value="young adult mystery">Young Adult Mystery</SelectItem>
+                    <SelectItem value="teen mystery">Teen Mystery</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -293,9 +267,9 @@ const ManuscriptsPage: React.FC = () => {
                     filteredManuscripts.map((manuscript) => (
                       <TableRow key={manuscript.id}>
                         <TableCell className="font-medium">{manuscript.title}</TableCell>
-                        <TableCell>{manuscript.writer}</TableCell>
+                        <TableCell>{manuscript.author || 'Unknown'}</TableCell>
                         <TableCell>
-                          {manuscript.editor === "Unassigned" ? (
+                          {!manuscript.editor ? (
                             <Badge variant="outline" className="bg-amber-100 text-amber-800">
                               Unassigned
                             </Badge>
@@ -303,21 +277,21 @@ const ManuscriptsPage: React.FC = () => {
                             manuscript.editor
                           )}
                         </TableCell>
-                        <TableCell>{manuscript.genre}</TableCell>
-                        <TableCell className="w-[200px]">
+                        <TableCell>{manuscript.genre || 'Unknown'}</TableCell>
+                        <TableCell>
                           <div className="flex items-center gap-2">
                             <Progress
-                              value={manuscript.progress}
+                              value={manuscript.progress || 0}
                               className="h-2"
-                              indicatorClassName={getProgressColor(manuscript.progress, manuscript.status)}
+                              indicatorClassName={getProgressColor(manuscript.progress || 0, manuscript.status)}
                             />
-                            <span className="text-xs w-9 text-muted-foreground">{manuscript.progress}%</span>
+                            <span className="text-xs w-9 text-muted-foreground">{manuscript.progress || 0}%</span>
                           </div>
                         </TableCell>
                         <TableCell>{getStatusBadge(manuscript.status)}</TableCell>
                         <TableCell className="text-right">
-                          <Button variant="outline" size="sm">
-                            Details
+                          <Button asChild variant="outline" size="sm">
+                            <Link to={`/manuscripts/${manuscript.id}`}>Details</Link>
                           </Button>
                         </TableCell>
                       </TableRow>

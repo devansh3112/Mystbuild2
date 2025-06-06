@@ -106,3 +106,39 @@ Vercel automatically redeploys your application every time you push changes to y
 ## Contact
 
 For any inquiries, please contact Mystery Publishers.
+
+## Supabase Backend Setup
+
+This project uses Supabase for authentication and data storage.
+
+### Setup Instructions
+
+1. **Configure Environment Variables**
+   
+   Create a `.env` file in the project root with the following variables:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+   SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+   ```
+
+2. **Initialize the Database**
+   
+   Run the setup script to create the tables and load sample data:
+   ```
+   npm run setup-db
+   ```
+   
+   This script will:
+   - Create all required tables
+   - Configure row level security policies
+   - Load sample data for testing
+
+3. **Feature Flag Control**
+   
+   The application is configured to use a "shadow implementation" approach, where real data can be toggled via feature flags.
+   
+   To enable real data:
+   - In `src/pages/AdminDashboard.tsx`, set `USE_SUPABASE_DATA = true`
+   
+   This allows for gradual integration of the backend without disrupting the existing UI.

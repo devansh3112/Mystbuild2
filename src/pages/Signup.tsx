@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -11,7 +10,7 @@ import { UserPlus, ArrowRight, Eye, EyeOff } from "lucide-react";
 
 const Signup: React.FC = () => {
   const navigate = useNavigate();
-  const { signup } = useAuth();
+  const { signup, loading: authLoading } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -42,13 +41,20 @@ const Signup: React.FC = () => {
     setIsLoading(true);
     
     try {
-      // In a real app, this would connect to your authentication service
-      await signup(email, password, name);
+      // Create account using Supabase
+      await signup(name, email, password, "writer");
       toast.success("Account created successfully!");
-      navigate("/");
-    } catch (error) {
-      toast.error("Failed to create account. Please try again.");
-      console.error(error);
+      navigate("/dashboard");
+    } catch (error: any) {
+      // Handle specific Supabase error messages
+      if (error.message?.includes("already registered")) {
+        toast.error("This email is already registered. Try signing in instead.");
+      } else if (error.message?.includes("stronger password")) {
+        toast.error("Please use a stronger password with a mix of letters, numbers, and symbols.");
+      } else {
+        toast.error("Failed to create account. Please try again.");
+        console.error(error);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -134,9 +140,9 @@ const Signup: React.FC = () => {
               <Button 
                 type="submit"
                 className="w-full bg-writer-primary hover:bg-writer-accent"
-                disabled={isLoading}
+                disabled={isLoading || authLoading}
               >
-                {isLoading ? (
+                {isLoading || authLoading ? (
                   <span className="flex items-center">
                     <span className="animate-spin mr-2">
                       <svg className="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
