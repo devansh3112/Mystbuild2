@@ -114,15 +114,6 @@ const AdminDashboard: React.FC = () => {
     console.log("AdminDashboard - Data loading status:", { isLoading, error, hasData: !!dashboardData });
   }, [user, isLoading, error, dashboardData]);
 
-  // If no user is set, try to use demo publisher user
-  useEffect(() => {
-    if (!user) {
-      console.log("No user detected, using demo publisher");
-      const { setDemoUser } = useAuth();
-      setDemoUser("publisher");
-    }
-  }, [user]);
-
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "Completed":

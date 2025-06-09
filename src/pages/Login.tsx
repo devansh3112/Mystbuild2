@@ -1,16 +1,18 @@
 import React, { useState } from "react";
-import { useAuth, UserRole } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNavigate, Link } from "react-router-dom";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabaseClient";
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const { login, setDemoUser, loading: authLoading } = useAuth();
+  const [isResetLoading, setIsResetLoading] = useState(false);
+  const { login, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -24,9 +26,23 @@ const Login: React.FC = () => {
     } catch (error: any) {
       // Display appropriate error messages based on error type
       if (error.message === "Invalid login credentials") {
-        toast.error("Invalid email or password. Please try again.");
+        toast.error("Invalid email or password. Please check your credentials and try again.", {
+          duration: 6000,
+        });
+      } else if (error.message.includes("Email not verified")) {
+        toast.error("Please verify your email before signing in. Check your inbox for the verification link.", {
+          duration: 8000,
+        });
       } else if (error.message.includes("rate limit")) {
         toast.error("Too many login attempts. Please try again later.");
+      } else if (error.message.includes("User not found") || error.message.includes("Invalid user")) {
+        toast.error("No account found with this email address. Please sign up first.", {
+          duration: 6000,
+        });
+      } else if (error.message.includes("Email not confirmed")) {
+        toast.error("Please verify your email before signing in. Check your inbox for the verification link.", {
+          duration: 8000,
+        });
       } else {
         toast.error("Login failed. Please try again.");
       }
@@ -35,11 +51,39 @@ const Login: React.FC = () => {
       setIsLoading(false);
     }
   };
-  
-  const handleRoleSelect = (role: UserRole) => {
-    setDemoUser(role);
-    toast.success(`Logged in as ${role}`);
-    navigate("/dashboard");
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      toast.error("Please enter your email address first.");
+      return;
+    }
+
+    setIsResetLoading(true);
+    
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      toast.success("Password reset email sent! Please check your inbox for instructions.", {
+        duration: 8000,
+      });
+    } catch (error: any) {
+      if (error.message?.includes("User not found") || error.message?.includes("Invalid email")) {
+        toast.error("No account found with this email address.", {
+          duration: 6000,
+        });
+      } else {
+        toast.error("Failed to send password reset email. Please try again.");
+      }
+      console.error(error);
+    } finally {
+      setIsResetLoading(false);
+    }
   };
 
   return (
@@ -85,39 +129,30 @@ const Login: React.FC = () => {
                   required
                 />
               </div>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="link"
+                  className="px-0 text-sm text-brand-red hover:underline"
+                  onClick={handleForgotPassword}
+                  disabled={isResetLoading}
+                >
+                  {isResetLoading ? "Sending..." : "Forgot password?"}
+                </Button>
+              </div>
               <Button className="w-full bg-brand-red hover:bg-brand-red/90" type="submit" disabled={isLoading || authLoading}>
                 {(isLoading || authLoading) ? "Signing in..." : "Sign In"}
               </Button>
             </form>
           </CardContent>
           <CardFooter className="flex flex-col">
-            <div className="text-sm text-muted-foreground mb-4">
-              For demonstration purposes, choose a role:
+            <div className="w-full text-center">
+              <span className="text-sm text-muted-foreground">Don't have an account? </span>
+              <Link to="/signup" className="text-sm text-brand-red hover:underline">
+                Sign up here
+              </Link>
             </div>
-            <div className="grid grid-cols-3 gap-3 w-full">
-              <Button 
-                variant="outline" 
-                className="flex-1 border-writer-primary text-writer-primary hover:bg-writer-primary hover:text-white"
-                onClick={() => handleRoleSelect("writer")}
-              >
-                Writer
-              </Button>
-              <Button 
-                variant="outline" 
-                className="flex-1 border-editor-primary text-editor-primary hover:bg-editor-primary hover:text-white"
-                onClick={() => handleRoleSelect("editor")}
-              >
-                Editor
-              </Button>
-              <Button 
-                variant="outline" 
-                className="flex-1 border-publisher-primary text-publisher-primary hover:bg-publisher-primary hover:text-white"
-                onClick={() => handleRoleSelect("publisher")}
-              >
-                Publisher
-              </Button>
-            </div>
-            <div className="w-full text-center mt-6">
+            <div className="w-full text-center mt-4">
               <Link to="/" className="text-sm text-muted-foreground hover:text-primary">
                 Return to home page
               </Link>

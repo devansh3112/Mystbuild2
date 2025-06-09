@@ -9,7 +9,6 @@ import {
   FileEdit, 
   Users, 
   BarChart, 
-  Settings, 
   LogOut, 
   ChevronLeft,
   ChevronRight,
@@ -149,13 +148,6 @@ const getRoleSpecificLinks = (role: UserRole, pathname: string) => {
       icon: <CreditCard size={20} />,
       label: "Payments",
       isActive: pathname === "/payments",
-      forRoles: ["writer", "editor", "publisher"] as UserRole[]
-    },
-    {
-      to: "/settings",
-      icon: <Settings size={20} />,
-      label: "Settings",
-      isActive: pathname === "/settings",
       forRoles: ["writer", "editor", "publisher"] as UserRole[]
     }
   ];

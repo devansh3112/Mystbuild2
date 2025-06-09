@@ -59,7 +59,7 @@ export const usePaymentHistory = () => {
         amount: paymentData.amount,
         currency: paymentData.currency || 'USD',
         payment_method: paymentData.payment_method || 'mpesa',
-        payment_provider: paymentData.payment_provider || 'flutterwave',
+        payment_provider: paymentData.payment_provider || 'paystack',
         transaction_id: paymentData.transaction_id,
         status: paymentData.status || 'pending',
         customer_email: paymentData.customer_email || user.email,
@@ -182,26 +182,26 @@ export const usePaymentHistory = () => {
   }, [payments]);
 
   // Handle M-Pesa payment completion
-  const handleMpesaPaymentComplete = useCallback(async (flutterwaveResponse, originalAmount) => {
+  const handleMpesaPaymentComplete = useCallback(async (paystackResponse, originalAmount) => {
     try {
       const paymentRecord = await createPayment({
-        id: flutterwaveResponse.tx_ref,
+        id: paystackResponse.tx_ref || paystackResponse.reference || `MP-${Date.now()}`,
         amount: originalAmount,
         currency: 'USD',
         payment_method: 'mpesa',
-        payment_provider: 'flutterwave',
-        transaction_id: flutterwaveResponse.transaction_id,
-        status: flutterwaveResponse.status === 'successful' ? 'successful' : 'failed',
-        customer_phone: flutterwaveResponse.customer?.phone_number,
+        payment_provider: 'paystack',
+        transaction_id: paystackResponse.transaction_id || paystackResponse.reference,
+        status: paystackResponse.status === 'successful' ? 'successful' : 'failed',
+        customer_phone: paystackResponse.customer?.phone_number || paystackResponse.phone_number,
         description: `M-Pesa deposit - $${originalAmount}`,
         metadata: {
-          flutterwave_response: flutterwaveResponse,
+          paystack_response: paystackResponse,
           conversion_rate: 150, // USD to KES rate
           kes_amount: originalAmount * 150
         }
       });
 
-      if (flutterwaveResponse.status === 'successful') {
+      if (paystackResponse.status === 'successful') {
         toast({
           title: "Payment Recorded",
           description: `M-Pesa payment of $${originalAmount} has been recorded successfully.`,

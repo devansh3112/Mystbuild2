@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { useAuth } from "@/contexts/AuthContext";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAuth, UserRole } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { UserPlus, ArrowRight, Eye, EyeOff } from "lucide-react";
 
@@ -15,6 +16,7 @@ const Signup: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [role, setRole] = useState<UserRole>("writer");
   const [isLoading, setIsLoading] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
@@ -41,16 +43,27 @@ const Signup: React.FC = () => {
     setIsLoading(true);
     
     try {
-      // Create account using Supabase
-      await signup(name, email, password, "writer");
+      // Create account using Supabase with selected role
+      await signup(name, email, password, role);
       toast.success("Account created successfully!");
       navigate("/dashboard");
     } catch (error: any) {
       // Handle specific Supabase error messages
-      if (error.message?.includes("already registered")) {
+      if (error.message === "VERIFICATION_REQUIRED") {
+        toast.success("Account created! Please check your email and click the verification link to complete your registration.", {
+          duration: 8000,
+        });
+        // Don't redirect - user needs to verify email first
+      } else if (error.message?.includes("User already registered") || error.message?.includes("already been registered")) {
+        toast.error("An account with this email already exists. Please try signing in instead.", {
+          duration: 6000,
+        });
+      } else if (error.message?.includes("already registered")) {
         toast.error("This email is already registered. Try signing in instead.");
       } else if (error.message?.includes("stronger password")) {
         toast.error("Please use a stronger password with a mix of letters, numbers, and symbols.");
+      } else if (error.message?.includes("Invalid email")) {
+        toast.error("Please enter a valid email address.");
       } else {
         toast.error("Failed to create account. Please try again.");
         console.error(error);
@@ -92,6 +105,19 @@ const Signup: React.FC = () => {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                 />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="role">Role</Label>
+                <Select value={role} onValueChange={(value: UserRole) => setRole(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select your role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="writer">Writer</SelectItem>
+                    <SelectItem value="editor">Editor</SelectItem>
+                    <SelectItem value="publisher">Publisher</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>

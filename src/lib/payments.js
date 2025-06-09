@@ -1,8 +1,8 @@
-// Flutterwave/M-Pesa Payment Integration for Mystery Publishers
+// Paystack/M-Pesa Payment Integration for Mystery Publishers
 import { config } from './config.js';
 
-const FLUTTERWAVE_PUBLIC_KEY = config.flutterwave.publicKey;
-const FLUTTERWAVE_SECRET_KEY = config.flutterwave.secretKey;
+const PAYSTACK_PUBLIC_KEY = config.paystack.publicKey;
+const PAYSTACK_SECRET_KEY = config.paystack.secretKey;
 
 export const paymentMethods = {
   MPESA: 'mpesa',
@@ -34,8 +34,8 @@ export const formatMpesaPhone = (phone, countryCode = '+254') => {
   return '+' + cleanPhone;
 };
 
-// Create Flutterwave payment configuration
-export const createFlutterwaveConfig = ({
+// Create Paystack payment configuration
+export const createPaystackConfig = ({
   amount,
   currency = 'KES',
   email,
@@ -52,7 +52,7 @@ export const createFlutterwaveConfig = ({
   const txRef = generateTransactionRef();
   
   const config = {
-    public_key: FLUTTERWAVE_PUBLIC_KEY,
+    public_key: PAYSTACK_PUBLIC_KEY,
     tx_ref: txRef,
     amount: amount,
     currency: currency,
@@ -92,7 +92,7 @@ export const processMpesaPayment = async ({
   onClose
 }) => {
   try {
-    const config = createFlutterwaveConfig({
+    const config = createPaystackConfig({
       amount,
       currency: 'KES',
       email,
@@ -122,13 +122,13 @@ export const processMpesaPayment = async ({
   }
 };
 
-// Verify payment with Flutterwave
+// Verify payment with Paystack
 export const verifyPayment = async (transactionId) => {
   try {
-    const response = await fetch(`https://api.flutterwave.com/v3/transactions/${transactionId}/verify`, {
+    const response = await fetch(`https://api.paystack.co/transaction/verify/${transactionId}`, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+        'Authorization': `Bearer ${PAYSTACK_SECRET_KEY}`,
         'Content-Type': 'application/json',
       },
     });

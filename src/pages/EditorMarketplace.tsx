@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
@@ -11,22 +11,20 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { DollarSign, FileText } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface EditorAssignment {
   id: string;
-  manuscriptId: string;
   title: string;
-  synopsis: string;
-  publisher: {
-    id: string;
-    name: string;
-  };
+  author: string;
   genre: string;
   wordCount: number;
-  chapters: number;
-  fee: number;
   deadline: string;
-  status: "available" | "applied" | "assigned" | "completed";
+  rate: number;
+  difficulty: "Easy" | "Medium" | "Hard";
+  status: "available" | "claimed" | "in_progress" | "completed";
+  description: string;
+  requirements: string[];
 }
 
 interface MyAssignment {
@@ -52,88 +50,42 @@ interface MyAssignment {
   }[];
 }
 
-const sampleAssignments: EditorAssignment[] = [
-  {
-    id: "ea1",
-    manuscriptId: "m1",
-    title: "Shadows in the Deep",
-    synopsis: "A thriller set on a remote research vessel in the Arctic.",
-    publisher: {
-      id: "p1",
-      name: "Horizon Publishing"
-    },
-    genre: "Thriller",
-    wordCount: 78000,
-    chapters: 22,
-    fee: 1500,
-    deadline: "2025-06-30",
-    status: "available"
-  },
-  {
-    id: "ea2",
-    manuscriptId: "m2",
-    title: "The Garden of Memories",
-    synopsis: "A family saga spanning three generations.",
-    publisher: {
-      id: "p2",
-      name: "Legacy Press"
-    },
-    genre: "Drama",
-    wordCount: 92000,
-    chapters: 28,
-    fee: 1800,
-    deadline: "2025-07-15",
-    status: "applied"
-  }
-];
-
-const myAssignments: MyAssignment[] = [
-  {
-    id: "ma1",
-    manuscriptId: "m3",
-    title: "Whispers of the Ancient Ones",
-    publisher: {
-      id: "p3",
-      name: "Mystic Books"
-    },
-    genre: "Fantasy",
-    wordCount: 105000,
-    chapters: 30,
-    fee: 2200,
-    status: "in_progress",
-    deadline: "2025-07-01",
-    progress: 40,
-    milestones: [
-      {
-        id: "mil1",
-        name: "Initial Review",
-        amount: 440,
-        status: "paid"
-      },
-      {
-        id: "mil2",
-        name: "First Half Completion",
-        amount: 880,
-        status: "pending"
-      },
-      {
-        id: "mil3",
-        name: "Final Edit",
-        amount: 880,
-        status: "pending"
-      }
-    ]
-  }
-];
-
 const EditorMarketplace: React.FC = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [assignments, setAssignments] = useState<EditorAssignment[]>(sampleAssignments);
-  const [myCurrentAssignments, setMyCurrentAssignments] = useState<MyAssignment[]>(myAssignments);
+  const [assignments, setAssignments] = useState<EditorAssignment[]>([]);
+  const [myCurrentAssignments, setMyCurrentAssignments] = useState<MyAssignment[]>([]);
   const [selectedAssignment, setSelectedAssignment] = useState<EditorAssignment | null>(null);
   const [applicationMessage, setApplicationMessage] = useState<string>("");
   const [showApplicationDialog, setShowApplicationDialog] = useState<boolean>(false);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedGenre, setSelectedGenre] = useState<string>("all");
+  const [selectedDifficulty, setSelectedDifficulty] = useState<string>("all");
+
+  useEffect(() => {
+    const loadAssignments = async () => {
+      if (!user) return;
+      
+      setLoading(true);
+      try {
+        // TODO: Replace with actual API call to fetch available assignments
+        // const response = await supabase
+        //   .from('assignments')
+        //   .select('*')
+        //   .eq('status', 'available');
+        
+        // For now, start with empty array
+        setAssignments([]);
+      } catch (error) {
+        console.error('Error loading assignments:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAssignments();
+  }, [user]);
 
   const applyForAssignment = (assignment: EditorAssignment) => {
     setSelectedAssignment(assignment);
@@ -143,7 +95,7 @@ const EditorMarketplace: React.FC = () => {
 
   const submitApplication = () => {
     setAssignments(assignments.map(a => 
-      a.id === selectedAssignment?.id ? { ...a, status: "applied" } : a
+      a.id === selectedAssignment?.id ? { ...a, status: "claimed" } : a
     ));
     
     toast({
@@ -190,42 +142,57 @@ const EditorMarketplace: React.FC = () => {
             <CardDescription>Browse manuscripts that need editors</CardDescription>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Publisher</TableHead>
-                  <TableHead>Genre</TableHead>
-                  <TableHead>Word Count</TableHead>
-                  <TableHead>Fee</TableHead>
-                  <TableHead>Deadline</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {assignments
-                  .filter(assignment => assignment.status === "available")
-                  .map((assignment) => (
-                  <TableRow key={assignment.id}>
-                    <TableCell className="font-medium">{assignment.title}</TableCell>
-                    <TableCell>{assignment.publisher.name}</TableCell>
-                    <TableCell>{assignment.genre}</TableCell>
-                    <TableCell>{assignment.wordCount}</TableCell>
-                    <TableCell>${assignment.fee}</TableCell>
-                    <TableCell>{new Date(assignment.deadline).toLocaleDateString()}</TableCell>
-                    <TableCell className="text-right">
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => applyForAssignment(assignment)}
-                      >
-                        Apply
-                      </Button>
-                    </TableCell>
+            {loading ? (
+              <div className="flex justify-center items-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-editor-primary"></div>
+                <span className="ml-2">Loading assignments...</span>
+              </div>
+            ) : assignments.filter(a => a.status === "available").length === 0 ? (
+              <div className="text-center py-8">
+                <FileText className="mx-auto mb-4 h-16 w-16 text-muted-foreground" />
+                <h3 className="text-lg font-semibold mb-2">No assignments available</h3>
+                <p className="text-muted-foreground">
+                  Check back later for new editing opportunities.
+                </p>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Title</TableHead>
+                    <TableHead>Publisher</TableHead>
+                    <TableHead>Genre</TableHead>
+                    <TableHead>Word Count</TableHead>
+                    <TableHead>Fee</TableHead>
+                    <TableHead>Deadline</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {assignments
+                    .filter(assignment => assignment.status === "available")
+                    .map((assignment) => (
+                    <TableRow key={assignment.id}>
+                      <TableCell className="font-medium">{assignment.title}</TableCell>
+                      <TableCell>{assignment.author}</TableCell>
+                      <TableCell>{assignment.genre}</TableCell>
+                      <TableCell>{assignment.wordCount}</TableCell>
+                      <TableCell>${assignment.rate}</TableCell>
+                      <TableCell>{new Date(assignment.deadline).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-right">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => applyForAssignment(assignment)}
+                        >
+                          Apply
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
 
@@ -235,7 +202,7 @@ const EditorMarketplace: React.FC = () => {
             <CardDescription>Track your pending applications</CardDescription>
           </CardHeader>
           <CardContent>
-            {assignments.filter(a => a.status === "applied").length === 0 ? (
+            {assignments.filter(a => a.status === "claimed").length === 0 ? (
               <p className="text-center py-8 text-muted-foreground">You haven't applied for any assignments yet.</p>
             ) : (
               <Table>
@@ -250,13 +217,13 @@ const EditorMarketplace: React.FC = () => {
                 </TableHeader>
                 <TableBody>
                   {assignments
-                    .filter(assignment => assignment.status === "applied")
+                    .filter(assignment => assignment.status === "claimed")
                     .map((assignment) => (
                     <TableRow key={assignment.id}>
                       <TableCell className="font-medium">{assignment.title}</TableCell>
-                      <TableCell>{assignment.publisher.name}</TableCell>
+                      <TableCell>{assignment.author}</TableCell>
                       <TableCell>{assignment.genre}</TableCell>
-                      <TableCell>${assignment.fee}</TableCell>
+                      <TableCell>${assignment.rate}</TableCell>
                       <TableCell>
                         <Badge className="bg-amber-500">Pending</Badge>
                       </TableCell>
@@ -349,7 +316,7 @@ const EditorMarketplace: React.FC = () => {
           <DialogHeader>
             <DialogTitle>Apply for Editing Assignment</DialogTitle>
             <DialogDescription>
-              Submit your application to edit "{selectedAssignment?.title}" for {selectedAssignment?.publisher.name}
+              Submit your application to edit "{selectedAssignment?.title}" for {selectedAssignment?.author}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -358,7 +325,7 @@ const EditorMarketplace: React.FC = () => {
               <ul className="text-sm space-y-1">
                 <li><span className="font-medium">Genre:</span> {selectedAssignment?.genre}</li>
                 <li><span className="font-medium">Word Count:</span> {selectedAssignment?.wordCount}</li>
-                <li><span className="font-medium">Fee:</span> ${selectedAssignment?.fee}</li>
+                <li><span className="font-medium">Fee:</span> ${selectedAssignment?.rate}</li>
                 <li><span className="font-medium">Deadline:</span> {selectedAssignment?.deadline && new Date(selectedAssignment.deadline).toLocaleDateString()}</li>
               </ul>
             </div>

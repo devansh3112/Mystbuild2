@@ -1,5 +1,4 @@
-
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,106 +8,43 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MessageSquare, Search, Send, PaperclipIcon, CheckCheck, Clock, User } from "lucide-react";
+import { MessageSquare, Search, Send, PaperclipIcon, CheckCheck, Clock, User, Phone, MoreVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 
-// Sample data for messages
-const conversations = [
-  {
-    id: 1,
-    with: {
-      id: 101,
-      name: "Emily Johnson",
-      role: "editor",
-      avatar: null,
-      online: true
-    },
-    scriptTitle: "The Lost Chapter",
-    lastMessage: "I've added some comments to Chapter 3. Could you review them?",
-    timestamp: "10:35 AM",
-    unread: 2
-  },
-  {
-    id: 2,
-    with: {
-      id: 102,
-      name: "Michael Smith",
-      role: "editor",
-      avatar: null,
-      online: false
-    },
-    scriptTitle: "Midnight Dreams",
-    lastMessage: "The changes for chapter 2 look great. I've approved them.",
-    timestamp: "Yesterday",
-    unread: 0
-  },
-  {
-    id: 3,
-    with: {
-      id: 103,
-      name: "Sarah Davis",
-      role: "admin",
-      avatar: null,
-      online: true
-    },
-    scriptTitle: "General",
-    lastMessage: "Your script has been scheduled for publication next month!",
-    timestamp: "2 days ago",
-    unread: 0
-  }
-];
-
-// Sample messages for a conversation
-const sampleMessages = [
-  {
-    id: 1,
-    senderId: 101,
-    text: "Hello! I've reviewed your manuscript and I have some suggestions.",
-    timestamp: "10:20 AM",
-    status: "read"
-  },
-  {
-    id: 2,
-    senderId: "me",
-    text: "Great! I'm looking forward to hearing your thoughts.",
-    timestamp: "10:22 AM",
-    status: "read"
-  },
-  {
-    id: 3,
-    senderId: 101,
-    text: "In Chapter 3, I think the character development could be stronger. The protagonist's motivation isn't clear in the second scene.",
-    timestamp: "10:25 AM",
-    status: "read"
-  },
-  {
-    id: 4,
-    senderId: "me",
-    text: "That makes sense. I was struggling with that part. Do you have any specific suggestions?",
-    timestamp: "10:30 AM",
-    status: "read"
-  },
-  {
-    id: 5,
-    senderId: 101,
-    text: "I'd suggest adding a brief flashback or internal monologue to reveal more about their past experiences that are driving their current actions.",
-    timestamp: "10:32 AM",
-    status: "read"
-  },
-  {
-    id: 6,
-    senderId: 101,
-    text: "Also, I've added some comments directly in the Google Doc. Could you review them and let me know what you think?",
-    timestamp: "10:35 AM",
-    status: "delivered"
-  }
-];
+// Sample data for conversations - This will be replaced with real data
+const conversations = [];
 
 const Messages: React.FC = () => {
-  const [selectedConversation, setSelectedConversation] = useState(conversations[0]);
+  const { user } = useAuth();
+  const [selectedConversation, setSelectedConversation] = useState(null);
   const [messageText, setMessageText] = useState("");
   const [search, setSearch] = useState("");
-  const [messages, setMessages] = useState(sampleMessages);
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    const loadConversations = async () => {
+      if (!user) return;
+      
+      setLoading(true);
+      try {
+        // TODO: Replace with actual API call to fetch user's conversations
+        // const response = await supabase
+        //   .from('conversations')
+        //   .select('*')
+        //   .eq('user_id', user.id);
+        
+        // For now, start with empty array
+        setLoading(false);
+      } catch (error) {
+        console.error('Error loading conversations:', error);
+        setLoading(false);
+      }
+    };
+
+    loadConversations();
+  }, [user]);
   
   const filteredConversations = search 
     ? conversations.filter(conv => 
@@ -131,6 +67,37 @@ const Messages: React.FC = () => {
     setMessages([...messages, newMessage]);
     setMessageText("");
   };
+
+  if (loading) {
+    return (
+      <DashboardLayout role={user?.role || "writer"}>
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-writer-primary"></div>
+          <span className="ml-2">Loading conversations...</span>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  // Empty state when no conversations
+  if (conversations.length === 0) {
+    return (
+      <DashboardLayout role={user?.role || "writer"}>
+        <div className="h-[calc(100vh-6rem)] flex flex-col animate-fade-in">
+          <h1 className="text-3xl font-bold mb-6 font-playfair">Messages</h1>
+          <Card className="flex-1 flex items-center justify-center">
+            <div className="text-center py-12">
+              <MessageSquare className="mx-auto mb-4 h-16 w-16 text-muted-foreground" />
+              <h3 className="text-lg font-semibold mb-2">No conversations yet</h3>
+              <p className="text-muted-foreground mb-4">
+                Start collaborating with editors and publishers to see your conversations here.
+              </p>
+            </div>
+          </Card>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout role="writer">

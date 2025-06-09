@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useAuth } from "@/contexts/AuthContext";
@@ -10,10 +9,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { DollarSign, CreditCard, CheckCircle, XCircle, Smartphone } from "lucide-react";
+import { DollarSign, CreditCard, CheckCircle, XCircle, Smartphone, Receipt } from "lucide-react";
 import MpesaPayment from "@/components/MpesaPayment";
+import PaystackPayment from "@/components/PaystackPayment";
 import { usePayments } from "@/hooks/usePayments";
 import { usePaymentHistory } from "@/hooks/usePaymentHistory";
+import { AlertDescription } from "@/components/ui/alert";
 
 interface PaymentTransaction {
   id: string;
@@ -38,137 +39,44 @@ interface PendingPayment {
   milestone?: string;
 }
 
-// Sample transaction data
-const getTransactionsByRole = (role: string): PaymentTransaction[] => {
-  switch (role) {
-    case "writer":
-      return [
-        {
-          id: "t1",
-          date: "2025-05-01",
-          description: "Initial payment for 'The Haunting of Elmwood Manor'",
-          amount: 1200,
-          status: "completed",
-          counterparty: "Horizon Publishing",
-          type: "incoming"
-        },
-        {
-          id: "t2",
-          date: "2025-05-15",
-          description: "Final payment for 'The Haunting of Elmwood Manor'",
-          amount: 1300,
-          status: "pending",
-          counterparty: "Horizon Publishing",
-          type: "incoming"
-        }
-      ];
-    case "editor":
-      return [
-        {
-          id: "t3",
-          date: "2025-04-20",
-          description: "Initial review milestone for 'Whispers of the Ancient Ones'",
-          amount: 440,
-          status: "completed",
-          counterparty: "Mystic Books",
-          type: "incoming"
-        },
-        {
-          id: "t4",
-          date: "2025-05-12",
-          description: "First half completion milestone for 'Whispers of the Ancient Ones'",
-          amount: 880,
-          status: "pending",
-          counterparty: "Mystic Books",
-          type: "incoming"
-        }
-      ];
-    case "publisher": // Changed from "admin" to "publisher"
-      return [
-        {
-          id: "t5",
-          date: "2025-04-01",
-          description: "Purchase payment for 'Shadows in the Deep'",
-          amount: 2800,
-          status: "completed",
-          counterparty: "Alex Rivera",
-          type: "outgoing"
-        },
-        {
-          id: "t6",
-          date: "2025-04-20",
-          description: "Editor payment - Initial review for 'Whispers of the Ancient Ones'",
-          amount: 440,
-          status: "completed",
-          counterparty: "Mark Davis",
-          type: "outgoing"
-        },
-        {
-          id: "t7",
-          date: "2025-05-15",
-          description: "Final payment for 'The Haunting of Elmwood Manor'",
-          amount: 1300,
-          status: "pending",
-          counterparty: "Sarah Johnson",
-          type: "outgoing"
-        },
-        {
-          id: "t8",
-          date: "2025-05-12",
-          description: "Editor payment - First half completion for 'Whispers of the Ancient Ones'",
-          amount: 880,
-          status: "pending",
-          counterparty: "Mark Davis",
-          type: "outgoing"
-        }
-      ];
-    default:
-      return [];
-  }
-};
+const EmptyTransactionsState = () => (
+  <div className="text-center py-12">
+    <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+      <Receipt size={24} className="text-muted-foreground" />
+    </div>
+    <h3 className="font-semibold mb-2">No transactions yet</h3>
+    <p className="text-muted-foreground">
+      Your payment transactions will appear here once you start using the platform
+    </p>
+  </div>
+);
 
-// Sample pending payments (only for publishers/admin)
-const pendingPayments: PendingPayment[] = [
-  {
-    id: "p1",
-    recipient: {
-      id: "w1",
-      name: "Sarah Johnson",
-      role: "writer"
-    },
-    description: "Final payment for 'The Haunting of Elmwood Manor'",
-    amount: 1300,
-    due: "2025-05-20"
-  },
-  {
-    id: "p2",
-    recipient: {
-      id: "e1",
-      name: "Mark Davis",
-      role: "editor"
-    },
-    description: "First half completion milestone for 'Whispers of the Ancient Ones'",
-    amount: 880,
-    due: "2025-05-15",
-    milestone: "First Half Completion"
-  }
-];
+const EmptyPendingPaymentsState = () => (
+  <div className="text-center py-12">
+    <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+      <DollarSign size={24} className="text-muted-foreground" />
+    </div>
+    <h3 className="font-semibold mb-2">No pending payments</h3>
+    <p className="text-muted-foreground">
+      Pending payments to writers and editors will appear here
+    </p>
+  </div>
+);
 
 const Payments: React.FC = () => {
   const { user, updateUserBalance } = useAuth();
   const { toast } = useToast();
-  const [transactions, setTransactions] = useState<PaymentTransaction[]>(
-    user ? getTransactionsByRole(user.role) : []
-  );
-  const [paymentRequests, setPaymentRequests] = useState<PendingPayment[]>(
-    user?.role === "publisher" ? pendingPayments : [] // Changed from "admin" to "publisher"
-  );
+  
+  // No sample data - user will have real transactions
+  const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
+  const [paymentRequests, setPaymentRequests] = useState<PendingPayment[]>([]);
   
   const [showAddFundsDialog, setShowAddFundsDialog] = useState(false);
   const [addAmount, setAddAmount] = useState<number>(0);
   const [showWithdrawDialog, setShowWithdrawDialog] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState<number>(0);
   const [showMpesaDialog, setShowMpesaDialog] = useState(false);
+  const [showPaystackDialog, setShowPaystackDialog] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<string>('card');
   
   const { convertUsdToKes } = usePayments();
@@ -182,16 +90,25 @@ const Payments: React.FC = () => {
         return;
       }
       
-      // Card payment logic (existing)
+      if (paymentMethod === 'card') {
+        setShowPaystackDialog(true);
+        setShowAddFundsDialog(false);
+        return;
+      }
+    }
+  };
+
+  const handlePaystackSuccess = (response: any) => {
+    if (response.status === 'success' && user) {
       updateUserBalance(addAmount);
       
       const newTransaction: PaymentTransaction = {
-        id: `deposit-${Date.now()}`,
+        id: response.transaction_id,
         date: new Date().toISOString().split('T')[0],
-        description: "Deposit to account",
+        description: "Deposit to account via Paystack",
         amount: addAmount,
         status: "completed",
-        counterparty: paymentMethod === 'mpesa' ? "M-Pesa" : "Bank Account",
+        counterparty: "Paystack Payment",
         type: "incoming"
       };
       
@@ -239,6 +156,16 @@ const Payments: React.FC = () => {
   const handleMpesaError = (error: any) => {
     console.error('M-Pesa payment error:', error);
     setShowMpesaDialog(false);
+  };
+
+  const handlePaystackError = (error: any) => {
+    console.error('Paystack payment error:', error);
+    setShowPaystackDialog(false);
+    toast({
+      title: "Payment Failed",
+      description: "There was an error processing your payment. Please try again.",
+      variant: "destructive"
+    });
   };
   
   const withdrawFunds = () => {
@@ -321,7 +248,7 @@ const Payments: React.FC = () => {
               </CardHeader>
               <CardContent>
                 {paymentRequests.length === 0 ? (
-                  <p className="text-center py-6 text-muted-foreground">No pending payments to process.</p>
+                  <EmptyPendingPaymentsState />
                 ) : (
                   <Table>
                     <TableHeader>
@@ -444,7 +371,7 @@ const Payments: React.FC = () => {
           </CardHeader>
           <CardContent>
             {transactions.length === 0 ? (
-              <p className="text-center py-6 text-muted-foreground">No transaction history to display.</p>
+              <EmptyTransactionsState />
             ) : (
               <Table>
                 <TableHeader>
@@ -542,9 +469,9 @@ const Payments: React.FC = () => {
                   <CreditCard className="mr-2" />
                   <span>•••• •••• •••• 4242</span>
                 </div>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Demo Mode: No real payment will be processed
-                </p>
+                <AlertDescription>
+                  Payment will be processed securely. Please review your payment details before proceeding.
+                </AlertDescription>
               </div>
             )}
 
@@ -559,6 +486,9 @@ const Payments: React.FC = () => {
                   <p><strong>Amount in KES:</strong> KES {convertUsdToKes(addAmount).toLocaleString()}</p>
                   <p className="text-xs mt-1">You'll be redirected to complete payment via M-Pesa</p>
                 </div>
+                <AlertDescription>
+                  Payment will be processed securely. Please review your payment details before proceeding.
+                </AlertDescription>
               </div>
             )}
           </div>
@@ -608,12 +538,13 @@ const Payments: React.FC = () => {
             </div>
             <div className="space-y-2">
               <Label htmlFor="bankAccount">Bank Account</Label>
-              <div className="flex items-center border rounded-md p-3 bg-muted/30">
-                <span>•••• 5678 (Demo Account)</span>
+              <div className="flex items-center justify-between">
+                <span>Bank Account</span>
+                <span>•••• 5678</span>
               </div>
-              <p className="text-sm text-muted-foreground mt-1">
-                Demo Mode: No real withdrawal will be processed
-              </p>
+              <AlertDescription>
+                Payment will be processed securely. Please review your payment details before proceeding.
+              </AlertDescription>
             </div>
           </div>
           <DialogFooter>
@@ -647,6 +578,30 @@ const Payments: React.FC = () => {
               description={`Account deposit - $${addAmount}`}
               onSuccess={handleMpesaSuccess}
               onError={handleMpesaError}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Paystack Payment Dialog */}
+      <Dialog open={showPaystackDialog} onOpenChange={setShowPaystackDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Paystack Payment</DialogTitle>
+            <DialogDescription>
+              Complete your payment using Paystack's secure gateway
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <PaystackPayment
+              amount={addAmount}
+              email={user?.email || ""}
+              onSuccess={handlePaystackSuccess}
+              onError={handlePaystackError}
+              onClose={() => setShowPaystackDialog(false)}
+              metadata={{
+                customerName: user?.name || "Unknown User"
+              }}
             />
           </div>
         </DialogContent>

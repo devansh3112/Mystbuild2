@@ -91,24 +91,26 @@ export const useManuscriptContent = (manuscriptId) => {
     }
   }, [manuscriptId, user]);
 
-  // Update manuscript synopsis
+  // Update manuscript synopsis (not available in current schema)
   const updateSynopsis = useCallback(async (synopsis) => {
-    return updateManuscriptContent({ synopsis });
-  }, [updateManuscriptContent]);
+    // Synopsis field doesn't exist in current schema - could store in a separate notes/description table later
+    console.warn('Synopsis field not available in current schema');
+    return null;
+  }, []);
 
-  // Update manuscript content URL after file upload
+  // Update manuscript content URL after file upload (not available in current schema)
   const updateContentUrl = useCallback(async (contentUrl, filename, fileSize) => {
-    return updateManuscriptContent({ 
-      content_url: contentUrl,
-      original_filename: filename,
-      file_size: fileSize
-    });
-  }, [updateManuscriptContent]);
+    // Content URL fields don't exist in current schema - files are handled via uploads table
+    console.warn('Content URL fields not available in current schema');
+    return null;
+  }, []);
 
-  // Update cover image
+  // Update cover image (not available in current schema)
   const updateCoverImage = useCallback(async (coverImageUrl) => {
-    return updateManuscriptContent({ cover_image_url: coverImageUrl });
-  }, [updateManuscriptContent]);
+    // Cover image field doesn't exist in current schema - files are handled via uploads table
+    console.warn('Cover image field not available in current schema');
+    return null;
+  }, []);
 
   // Calculate total word count from chapters
   const calculateTotalWordCount = useCallback(async () => {

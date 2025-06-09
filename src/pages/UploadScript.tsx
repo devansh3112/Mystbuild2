@@ -1,6 +1,6 @@
-
 import React, { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabaseClient";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 
 const UploadScript: React.FC = () => {
+  const { user } = useAuth();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [genre, setGenre] = useState("");
@@ -32,6 +33,7 @@ const UploadScript: React.FC = () => {
   const [coverImage, setCoverImage] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [chapterCount, setChapterCount] = useState<number>(1);
+  const [wordCount, setWordCount] = useState("");
   
   const handleCoverImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -64,16 +66,16 @@ const UploadScript: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!title || !genre || !docsLink) {
-      toast.error("Please fill in all required fields");
-      return;
-    }
-
-    if (!validateGoogleDocsLink(docsLink)) {
-      toast.error("Please enter a valid Google Docs link");
+    if (!user) {
+      toast.error("You must be logged in to upload scripts");
       return;
     }
     
+    if (!title.trim() || !genre) {
+      toast.error("Please fill in all required fields (title and genre)");
+      return;
+    }
+
     if (chapterCount < 1) {
       toast.error("Number of chapters must be at least 1");
       return;
@@ -81,27 +83,72 @@ const UploadScript: React.FC = () => {
     
     setIsUploading(true);
     
-    // Simulate upload progress
-    for (let i = 0; i <= 100; i += 10) {
-      await new Promise(resolve => setTimeout(resolve, 200));
-      setUploadProgress(i);
+    try {
+      // Simulate upload progress
+      for (let i = 0; i <= 50; i += 10) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        setUploadProgress(i);
+      }
+      
+      // Prepare manuscript data (using only columns that exist in database)
+      const manuscriptData = {
+        title: title.trim(),
+        genre: genre,
+        author_id: user.id,
+        status: 'submitted',
+        word_count: parseInt(wordCount) || 0,
+        submission_date: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      console.log('Submitting manuscript:', manuscriptData);
+
+      // Save to Supabase
+      const { data, error } = await supabase
+        .from('manuscripts')
+        .insert([manuscriptData])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Supabase error:', error);
+        toast.error(`Failed to upload script: ${error.message}`);
+        return;
+      }
+
+      console.log('Manuscript uploaded successfully:', data);
+
+      // Complete progress
+      for (let i = 50; i <= 100; i += 10) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        setUploadProgress(i);
+      }
+      
+      toast.success("Script uploaded successfully!");
+      
+      // Reset form
+      setTitle("");
+      setDescription("");
+      setGenre("");
+      setDocsLink("");
+      setCoverImage(null);
+      setCoverPreview(null);
+      setChapterCount(1);
+      setWordCount("");
+      
+      // Redirect to My Scripts page after a short delay
+      setTimeout(() => {
+        window.location.href = '/my-scripts';
+      }, 1500);
+      
+    } catch (error) {
+      console.error('Error in handleSubmit:', error);
+      toast.error("An unexpected error occurred. Please try again.");
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
     }
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    toast.success("Script uploaded successfully!");
-    setIsUploading(false);
-    setUploadProgress(0);
-    
-    // Reset form
-    setTitle("");
-    setDescription("");
-    setGenre("");
-    setDocsLink("");
-    setCoverImage(null);
-    setCoverPreview(null);
-    setChapterCount(1);
   };
 
   return (
@@ -164,6 +211,17 @@ const UploadScript: React.FC = () => {
                 </Select>
               </div>
               <div className="space-y-1">
+                <Label htmlFor="wordCount">Word Count</Label>
+                <Input 
+                  id="wordCount" 
+                  type="number" 
+                  min="0"
+                  placeholder="Enter the approximate word count" 
+                  value={wordCount}
+                  onChange={(e) => setWordCount(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
                 <Label htmlFor="chapterCount">Number of Chapters <span className="text-destructive">*</span></Label>
                 <Input 
                   id="chapterCount" 
@@ -188,7 +246,7 @@ const UploadScript: React.FC = () => {
             <CardContent>
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="docsLink">Google Docs Link <span className="text-destructive">*</span></Label>
+                  <Label htmlFor="docsLink">Google Docs Link (Optional - not stored yet)</Label>
                   <div className="flex relative">
                     <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-muted-foreground">
                       <LinkIcon size={16} />
@@ -199,11 +257,10 @@ const UploadScript: React.FC = () => {
                       placeholder="https://docs.google.com/document/d/..." 
                       value={docsLink}
                       onChange={(e) => setDocsLink(e.target.value)}
-                      required
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Please make sure your Google Doc is shared with edit access to anyone with the link
+                    Note: Google Docs links cannot be stored yet due to current database schema. This feature will be added in a future update.
                   </p>
                 </div>
               </div>

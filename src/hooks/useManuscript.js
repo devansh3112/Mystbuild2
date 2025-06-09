@@ -32,85 +32,12 @@ export const useManuscript = (manuscriptId, options = {}) => {
 
   // Helper function to provide fallback data when needed
   const provideFallbackData = (id) => {
+    console.log("Unable to load manuscript data for ID:", id);
+    setError("Unable to load manuscript data");
     setIsLoading(false);
     
-    if (!manuscript) {
-      console.log("Providing fallback manuscript data for ID:", id);
-      
-      // Sample manuscript data that matches expected structure
-      const mockManuscript = {
-        id: parseInt(id) || 1,
-        title: "The Silent Symphony",
-        status: "In Review",
-        submission_date: "2025-05-17T00:00:00",
-        deadline: "2025-07-16T00:00:00",
-        abstract: "A compelling story of musical intrigue set in 1920s Paris, where a deaf composer creates the most haunting symphony of the century.",
-        genre: "Historical Fiction",
-        word_count: 78500,
-        author: {
-          id: "auth0|123456",
-          name: "Jason Patel",
-          email: "jason.patel@example.com",
-          bio: "Award-winning author with a background in musical theory and European history.",
-          avatar: "https://i.pravatar.cc/150?img=32"
-        },
-        editor: {
-          id: "auth0|789012",
-          name: "Priya Sharma",
-          email: "priya.sharma@example.com", 
-          bio: "Senior editor with 10+ years of experience in fiction editing.",
-          avatar: "https://i.pravatar.cc/150?img=48"
-        },
-        chapters: [
-          {
-            id: 1,
-            title: "The Concert Hall",
-            order: 1,
-            status: "Reviewed",
-            feedback: "Excellent opening chapter. The description of the concert hall is vivid and engaging."
-          },
-          {
-            id: 2,
-            title: "The Composer's Challenge",
-            order: 2,
-            status: "In Review",
-            feedback: ""
-          },
-          {
-            id: 3,
-            title: "Parisian Nights",
-            order: 3,
-            status: "Not Started",
-            feedback: ""
-          },
-          {
-            id: 4,
-            title: "The Revelation",
-            order: 4,
-            status: "Not Started",
-            feedback: ""
-          }
-        ],
-        reviews: [
-          {
-            id: 1,
-            reviewer_name: "Priya Sharma",
-            date: "2025-05-20T14:30:00",
-            rating: 4,
-            comment: "Strong premise with well-developed characters. The historical research is evident throughout."
-          },
-          {
-            id: 2,
-            reviewer_name: "Mark Davis",
-            date: "2025-05-22T10:15:00",
-            rating: 5,
-            comment: "Exceptional narrative voice. The protagonist's journey is compelling and authentic."
-          }
-        ]
-      };
-      
-      setManuscript(mockManuscript);
-    }
+    // For production, don't provide mock data - set to null
+    setManuscript(null);
   };
 
   useEffect(() => {

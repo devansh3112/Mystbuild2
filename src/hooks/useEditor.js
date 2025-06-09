@@ -37,80 +37,13 @@ export const useEditor = (options = {}) => {
 
   // Helper function to provide fallback data when needed
   const provideFallbackData = () => {
+    console.log("Unable to load editor data");
+    setError("Unable to load editor data");
     setIsLoading(false);
     
-    if (!editors.length) {
-      console.log("Providing fallback editor data");
-      
-      const mockEditors = [
-        {
-          id: "editor-1",
-          name: "Priya Sharma",
-          email: "priya.sharma@example.com",
-          bio: "Senior editor with 10+ years of experience in fiction editing.",
-          avatar: "https://i.pravatar.cc/150?img=48",
-          specialties: ["Fiction", "Romance", "Drama"],
-          active: true,
-          created_at: "2024-01-15T00:00:00"
-        },
-        {
-          id: "editor-2", 
-          name: "Mark Davis",
-          email: "mark.davis@example.com",
-          bio: "Experienced editor specializing in mystery and thriller genres.",
-          avatar: "https://i.pravatar.cc/150?img=52",
-          specialties: ["Mystery", "Thriller", "Suspense"],
-          active: true,
-          created_at: "2024-02-10T00:00:00"
-        },
-        {
-          id: "editor-3",
-          name: "James Wilson", 
-          email: "james.wilson@example.com",
-          bio: "Technical editor with expertise in science fiction and fantasy.",
-          avatar: "https://i.pravatar.cc/150?img=55",
-          specialties: ["Science Fiction", "Fantasy", "Technical Writing"],
-          active: true,
-          created_at: "2024-03-05T00:00:00"
-        }
-      ];
-
-      const mockMetrics = includeMetrics ? [
-        {
-          id: "metric-1",
-          editor_id: "editor-1",
-          month: "2025-05-01",
-          assigned_count: 4,
-          completed_count: 4,
-          satisfaction_rating: 4.9,
-          on_time_rate: 1.0,
-          profiles: { name: "Priya Sharma" }
-        },
-        {
-          id: "metric-2",
-          editor_id: "editor-2", 
-          month: "2025-05-01",
-          assigned_count: 5,
-          completed_count: 3,
-          satisfaction_rating: 4.8,
-          on_time_rate: 1.0,
-          profiles: { name: "Mark Davis" }
-        },
-        {
-          id: "metric-3",
-          editor_id: "editor-3",
-          month: "2025-05-01", 
-          assigned_count: 6,
-          completed_count: 5,
-          satisfaction_rating: 4.7,
-          on_time_rate: 0.95,
-          profiles: { name: "James Wilson" }
-        }
-      ] : [];
-
-      setEditors(mockEditors);
-      setEditorMetrics(mockMetrics);
-    }
+    // For production, don't provide mock data - use empty arrays
+    setEditors([]);
+    setEditorMetrics([]);
   };
 
   useEffect(() => {

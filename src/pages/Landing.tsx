@@ -173,7 +173,7 @@ const Landing: React.FC = () => {
             <FeatureCard 
               icon={<DollarSign />}
               title="Secure Payments"
-              description="Integrated Flutterwave and MPesa payment options for your convenience."
+              description="Integrated Paystack and MPesa payment options for your convenience."
               delay={0.2}
             />
             
@@ -309,10 +309,10 @@ const Landing: React.FC = () => {
               </p>
               <div className="flex flex-wrap justify-center gap-4">
                 <Button className="bg-brand-red hover:bg-brand-red/90 hover:scale-105 transition-all shadow-md" size="lg" asChild>
-                  <Link to="/upload">Upload Your Script</Link>
+                  <Link to="/signup">Get Started</Link>
                 </Button>
-                <Button variant="outline" size="lg" className="hover:scale-105 transition-all">
-                  View Demo
+                <Button variant="outline" size="lg" className="hover:scale-105 transition-all" asChild>
+                  <Link to="/login">Sign In</Link>
                 </Button>
               </div>
             </div>

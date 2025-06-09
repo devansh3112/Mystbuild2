@@ -21,39 +21,10 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   signup: (name: string, email: string, password: string, role?: UserRole) => Promise<void>;
   logout: () => Promise<void>;
-  setDemoUser: (role: UserRole) => void;
   updateUserBalance: (amount: number) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// Sample users for demo purposes - keeping for backward compatibility
-const demoUsers: Record<UserRole, User> = {
-  writer: {
-    id: "w1",
-    name: "Sarah Johnson",
-    email: "sarah@example.com",
-    role: "writer",
-    avatar: "https://i.pravatar.cc/150?img=32",
-    balance: 1250.00
-  },
-  editor: {
-    id: "e1",
-    name: "Mark Davis",
-    email: "mark@example.com",
-    role: "editor",
-    avatar: "https://i.pravatar.cc/150?img=61",
-    balance: 2450.75
-  },
-  publisher: {
-    id: "a1",
-    name: "Priya Sharma",
-    email: "priya@example.com",
-    role: "publisher",
-    avatar: "https://i.pravatar.cc/150?img=48",
-    balance: 5000.00
-  }
-};
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -70,6 +41,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         .single();
 
       if (error) {
+        // If profile doesn't exist, it might be a newly verified user
+        if (error.code === 'PGRST116') {
+          console.log('Profile not found for user:', userId);
+          return null;
+        }
         console.error('Error fetching profile:', error);
         return null;
       }
@@ -86,6 +62,33 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       };
     } catch (error) {
       console.error('Profile fetch error:', error);
+      return null;
+    }
+  };
+
+  // Function to create profile for verified users
+  const createProfileForVerifiedUser = async (userId: string, email: string) => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .insert([
+          {
+            id: userId,
+            name: email.split('@')[0], // Use email prefix as default name
+            role: 'writer', // Default role
+            avatar_url: `https://i.pravatar.cc/150?u=${email}`,
+            balance: 0
+          }
+        ]);
+
+      if (error) {
+        console.error('Error creating profile for verified user:', error);
+        return null;
+      }
+
+      return await fetchUserProfile(userId);
+    } catch (error) {
+      console.error('Profile creation error:', error);
       return null;
     }
   };
@@ -120,7 +123,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           
           if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
             if (newSession?.user.id) {
-              const profile = await fetchUserProfile(newSession.user.id);
+              let profile = await fetchUserProfile(newSession.user.id);
+              
+              // If no profile exists (newly verified user), create one
+              if (!profile && newSession.user.email) {
+                profile = await createProfileForVerifiedUser(newSession.user.id, newSession.user.email);
+              }
+              
               setUser(profile);
             }
           } else if (event === 'SIGNED_OUT') {
@@ -140,13 +149,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const login = async (email: string, password: string): Promise<void> => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) {
         throw error;
+      }
+
+      // Check if email is verified
+      if (data.user && !data.user.email_confirmed_at) {
+        throw new Error("Email not verified. Please check your email and click the verification link before signing in.");
       }
       
       // Auth state change listener will handle updating the user
@@ -172,14 +186,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         throw new Error("User creation failed");
       }
 
-      // 2. Create the user profile
+      // Check if email confirmation is required
+      if (!data.session) {
+        // Email confirmation is required - don't create profile yet
+        throw new Error("VERIFICATION_REQUIRED");
+      }
+
+      // 2. Create the user profile (only if email confirmation is not required)
       const { error: profileError } = await supabase
         .from('profiles')
         .insert([
           {
             id: data.user.id,
-      name,
-      role,
+            name,
+            role,
             avatar_url: `https://i.pravatar.cc/150?u=${email}`,
             balance: 0
           }
@@ -209,11 +229,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       console.error('Logout error:', error);
     }
-  };
-  
-  // Keep this for backward compatibility with the demo functionality
-  const setDemoUser = (role: UserRole) => {
-    setUser(demoUsers[role]);
   };
 
   const updateUserBalance = async (amount: number) => {
@@ -254,7 +269,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         login,
         signup,
         logout,
-        setDemoUser,
         updateUserBalance
       }}
     >

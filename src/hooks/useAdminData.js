@@ -131,10 +131,10 @@ export const useAdminData = (options = {}) => {
         useRealData
       });
       
-      // Allow demo users (who don't have a session but do have a role)
-      if (!session && (!user || user.role !== 'publisher')) {
-        console.log("No session and not a publisher - unauthorized access");
-        setError('Unauthorized access - No session or not publisher role');
+      // Require proper authentication for admin access
+      if (!session || !user || user.role !== 'publisher') {
+        console.log("Unauthorized access - No session or not publisher role");
+        setError('Unauthorized access - Admin privileges required');
         setIsLoading(false);
         return;
       }

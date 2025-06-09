@@ -59,7 +59,7 @@ export const useSearch = () => {
 
       // Apply text search
       if (searchTerm.trim()) {
-        query = query.or(`title.ilike.%${searchTerm}%,genre.ilike.%${searchTerm}%,synopsis.ilike.%${searchTerm}%`);
+        query = query.or(`title.ilike.%${searchTerm}%,genre.ilike.%${searchTerm}%`);
       }
 
       // Apply filters

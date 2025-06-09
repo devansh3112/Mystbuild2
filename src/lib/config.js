@@ -8,13 +8,30 @@ export const config = {
   supabase: {
     url: import.meta.env.VITE_SUPABASE_URL,
     anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+    serviceKey: import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY
   },
   
-  // Payment configuration
-  flutterwave: {
-    publicKey: import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY,
-    secretKey: import.meta.env.VITE_FLUTTERWAVE_SECRET_KEY,
-    isTestMode: import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY?.includes('test'),
+  // Paystack Configuration (Updated from Flutterwave)
+  paystack: {
+    publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
+    secretKey: import.meta.env.VITE_PAYSTACK_SECRET_KEY,
+    isTestMode: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY?.includes('test'),
+    baseUrl: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY?.includes('test') 
+      ? 'https://api.paystack.co'
+      : 'https://api.paystack.co'
+  },
+  
+  // M-Pesa Configuration (keeping for mobile payments)
+  mpesa: {
+    consumerKey: import.meta.env.VITE_MPESA_CONSUMER_KEY,
+    consumerSecret: import.meta.env.VITE_MPESA_CONSUMER_SECRET,
+    passkey: import.meta.env.VITE_MPESA_PASSKEY,
+    shortcode: import.meta.env.VITE_MPESA_SHORTCODE,
+    environment: import.meta.env.VITE_MPESA_ENVIRONMENT || 'sandbox',
+    accountRef: 'Mystery Publishers',
+    baseUrl: import.meta.env.VITE_MPESA_ENVIRONMENT === 'production' 
+      ? 'https://api.safaricom.co.ke'
+      : 'https://sandbox.safaricom.co.ke'
   },
   
   // App configuration
@@ -71,6 +88,14 @@ export const config = {
       save: 'Changes saved successfully!',
     },
   },
+  
+  // Exchange rates
+  exchange: {
+    rates: {
+      usdToKes: 150, // Default rate, should be fetched from an API
+      kesToUsd: 0.0067
+    }
+  }
 };
 
 // Environment validation
@@ -78,7 +103,8 @@ export const validateEnvironment = () => {
   const required = [
     'VITE_SUPABASE_URL',
     'VITE_SUPABASE_ANON_KEY',
-    'VITE_FLUTTERWAVE_PUBLIC_KEY',
+    'VITE_PAYSTACK_PUBLIC_KEY',
+    'VITE_MPESA_CONSUMER_KEY'
   ];
   
   const missing = required.filter(key => !import.meta.env[key]);

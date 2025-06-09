@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useFlutterwave, closePaymentModal } from 'flutterwave-react-v3';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,50 +54,7 @@ const MpesaPayment = ({
     return phone;
   };
 
-  // Configuration for Flutterwave
-  const config = {
-    public_key: import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY,
-    tx_ref: `myst_${Date.now()}`,
-    amount: currency === 'USD' ? convertUsdToKes(amount) : amount,
-    currency: 'KES',
-    payment_options: 'mpesa',
-    customer: {
-      email: 'user@mystpublishers.com',
-      phone_number: `+${phoneNumber}`,
-      name: 'Mystery Publishers User',
-    },
-    customizations: {
-      title: 'Mystery Publishers',
-      description: description,
-      logo: '/logo.png',
-    },
-    callback: (response) => {
-      console.log('M-Pesa payment response:', response);
-      closePaymentModal();
-      
-      if (response.status === 'successful') {
-        toast({
-          title: "Payment Successful!",
-          description: `M-Pesa payment of KES ${convertUsdToKes(amount)} completed successfully.`,
-        });
-        if (onSuccess) onSuccess(response);
-      } else {
-        toast({
-          title: "Payment Failed",
-          description: "Your M-Pesa payment could not be processed. Please try again.",
-          variant: "destructive"
-        });
-        if (onError) onError(response);
-      }
-    },
-    onclose: () => {
-      console.log('M-Pesa payment modal closed');
-    },
-  };
-
-  const handleFlutterPayment = useFlutterwave(config);
-
-  const handlePayment = () => {
+  const handlePayment = async () => {
     if (!isValidPhone) {
       toast({
         title: "Invalid Phone Number",
@@ -108,7 +64,33 @@ const MpesaPayment = ({
       return;
     }
 
-    handleFlutterPayment();
+    try {
+      // Use the processMpesaDeposit from usePayments hook
+      await processMpesaDeposit(amount, phoneNumber);
+      
+      toast({
+        title: "Payment Initiated",
+        description: "Please check your phone for the M-Pesa prompt",
+      });
+      
+      if (onSuccess) {
+        onSuccess({
+          reference: `MP-${Date.now()}`,
+          status: 'successful',
+          amount: amount,
+          currency: currency,
+          phone_number: phoneNumber
+        });
+      }
+    } catch (error) {
+      console.error('M-Pesa payment error:', error);
+      toast({
+        title: "Payment Failed",
+        description: "Your M-Pesa payment could not be processed. Please try again.",
+        variant: "destructive"
+      });
+      if (onError) onError(error);
+    }
   };
 
   const kesAmount = currency === 'USD' ? convertUsdToKes(amount) : amount;

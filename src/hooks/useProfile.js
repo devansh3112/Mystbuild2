@@ -37,70 +37,19 @@ export const useProfile = (profileId = null, options = {}) => {
 
   // Helper function to provide fallback data when needed
   const provideFallbackData = () => {
+    console.log("Providing fallback profile data");
+    setError("Unable to load profile data");
     setIsLoading(false);
     
-    const mockProfiles = [
-      {
-        id: "profile-1",
-        name: "Jason Patel",
-        email: "jason.patel@example.com",
-        role: "writer",
-        bio: "Award-winning author with a background in musical theory and European history.",
-        avatar: "https://i.pravatar.cc/150?img=32",
-        specialties: ["Historical Fiction", "Musical Themes"],
-        active: true,
-        created_at: "2024-01-10T00:00:00"
-      },
-      {
-        id: "profile-2", 
-        name: "Priya Sharma",
-        email: "priya.sharma@example.com",
-        role: "editor",
-        bio: "Senior editor with 10+ years of experience in fiction editing.",
-        avatar: "https://i.pravatar.cc/150?img=48",
-        specialties: ["Fiction", "Romance", "Drama"],
-        active: true,
-        created_at: "2024-01-15T00:00:00"
-      },
-      {
-        id: "profile-3",
-        name: "Mark Davis",
-        email: "mark.davis@example.com", 
-        role: "editor",
-        bio: "Experienced editor specializing in mystery and thriller genres.",
-        avatar: "https://i.pravatar.cc/150?img=52",
-        specialties: ["Mystery", "Thriller", "Suspense"],
-        active: true,
-        created_at: "2024-02-10T00:00:00"
-      },
-      {
-        id: "profile-4",
-        name: "Sarah Thompson",
-        email: "sarah.thompson@example.com",
-        role: "publisher", 
-        bio: "Publishing industry veteran with expertise in market analysis and author development.",
-        avatar: "https://i.pravatar.cc/150?img=45",
-        specialties: ["Market Analysis", "Author Development", "Publishing Strategy"],
-        active: true,
-        created_at: "2024-01-05T00:00:00"
-      }
-    ];
-
+    // For production, don't provide mock data - use empty states
     if (fetchList) {
-      // Filter by role if specified
-      const filteredProfiles = role 
-        ? mockProfiles.filter(p => p.role === role)
-        : mockProfiles;
-      setProfiles(filteredProfiles);
-      console.log("Providing fallback profiles list:", filteredProfiles);
+      setProfiles([]);
+      console.log("No profiles available");
     }
 
     if (profileId || (!fetchList && user)) {
-      // Get specific profile or current user's profile
-      const targetId = profileId || user?.id;
-      const targetProfile = mockProfiles.find(p => p.id === targetId) || mockProfiles[0];
-      setProfile(targetProfile);
-      console.log("Providing fallback profile data:", targetProfile);
+      setProfile(null);
+      console.log("No profile data available");
     }
   };
 

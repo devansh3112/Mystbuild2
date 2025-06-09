@@ -8,6 +8,7 @@ import AuthLoading from "@/components/AuthLoading";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
+import ResetPassword from "./pages/ResetPassword";
 import WriterDashboard from "./pages/WriterDashboard";
 import EditorDashboard from "./pages/EditorDashboard";
 import PublisherDashboard from "./pages/AdminDashboard";
@@ -23,9 +24,6 @@ import Payments from "./pages/Payments";
 import Manuscripts from "./pages/Manuscripts";
 import ManuscriptDetail from "./pages/ManuscriptDetail";
 import NotFound from "./pages/NotFound";
-import DataVerificationTest from "./components/DataVerificationTest";
-import SimpleManuscriptTest from "./components/SimpleManuscriptTest";
-import ManuscriptDebug from "./components/ManuscriptDebug";
 import { useEffect } from "react";
 
 const queryClient = new QueryClient({
@@ -130,6 +128,7 @@ const AppRoutes = () => {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route 
         path="/dashboard" 
         element={
@@ -209,18 +208,6 @@ const AppRoutes = () => {
             <ManuscriptDetail />
           </ProtectedRoute>
         } 
-      />
-      <Route 
-        path="/test-data" 
-        element={<DataVerificationTest />} 
-      />
-      <Route 
-        path="/simple-test" 
-        element={<SimpleManuscriptTest />} 
-      />
-      <Route 
-        path="/debug-manuscripts" 
-        element={<ManuscriptDebug />} 
       />
       {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
       <Route path="*" element={<NotFound />} />

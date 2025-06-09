@@ -1,9 +1,8 @@
 import { useState, useCallback } from 'react';
-import { useFlutterwave, closePaymentModal } from 'flutterwave-react-v3';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  createFlutterwaveConfig,
+  createPaystackConfig,
   processMpesaPayment,
   verifyPayment,
   validatePaymentData,
@@ -38,7 +37,7 @@ export const usePayments = () => {
         : paymentData.amount;
 
       // Create payment configuration
-      const config = createFlutterwaveConfig({
+      const config = createPaystackConfig({
         amount: kesAmount,
         currency: 'KES',
         email: paymentData.email || user?.email || 'user@mystpublishers.com',
@@ -65,7 +64,7 @@ export const usePayments = () => {
     try {
       console.log('Payment successful:', response);
       
-      // Verify the payment with Flutterwave
+      // Verify the payment with Paystack
       const verification = await verifyPayment(response.transaction_id);
       
       if (verification.status === 'success' && verification.data.status === 'successful') {
@@ -93,7 +92,7 @@ export const usePayments = () => {
           transaction_id: response.transaction_id,
           status: PAYMENT_STATUS.SUCCESSFUL,
           completed_at: new Date().toISOString(),
-          flutterwave_data: verification.data
+          paystack_data: verification.data
         };
 
         return paymentRecord;
@@ -105,7 +104,6 @@ export const usePayments = () => {
       handlePaymentError(error);
     } finally {
       setIsProcessing(false);
-      closePaymentModal();
     }
   }, [updateUserBalance, toast]);
 
@@ -120,8 +118,6 @@ export const usePayments = () => {
       description: error.message || "There was an error processing your payment. Please try again.",
       variant: "destructive"
     });
-    
-    closePaymentModal();
   }, [toast]);
 
   // Handle payment modal close

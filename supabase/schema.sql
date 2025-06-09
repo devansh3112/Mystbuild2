@@ -78,10 +78,19 @@ ALTER TABLE editor_metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE platform_metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE metric_history ENABLE ROW LEVEL SECURITY;
 
--- Basic security policies
+-- Basic security policies for manuscripts
 CREATE POLICY "Writers can view their own manuscripts" 
 ON manuscripts FOR SELECT 
 USING (auth.uid() = author_id);
+
+CREATE POLICY "Writers can insert their own manuscripts" 
+ON manuscripts FOR INSERT 
+WITH CHECK (auth.uid() = author_id);
+
+CREATE POLICY "Writers can update their own manuscripts" 
+ON manuscripts FOR UPDATE 
+USING (auth.uid() = author_id)
+WITH CHECK (auth.uid() = author_id);
 
 CREATE POLICY "Editors can view assigned manuscripts" 
 ON manuscripts FOR SELECT 
@@ -94,6 +103,27 @@ USING (EXISTS (
 CREATE POLICY "Publishers can view all manuscripts" 
 ON manuscripts FOR SELECT 
 USING (EXISTS (
+  SELECT 1 FROM profiles 
+  WHERE profiles.id = auth.uid() 
+  AND profiles.role = 'publisher'
+));
+
+CREATE POLICY "Publishers can insert any manuscript" 
+ON manuscripts FOR INSERT 
+WITH CHECK (EXISTS (
+  SELECT 1 FROM profiles 
+  WHERE profiles.id = auth.uid() 
+  AND profiles.role = 'publisher'
+));
+
+CREATE POLICY "Publishers can update any manuscript" 
+ON manuscripts FOR UPDATE 
+USING (EXISTS (
+  SELECT 1 FROM profiles 
+  WHERE profiles.id = auth.uid() 
+  AND profiles.role = 'publisher'
+))
+WITH CHECK (EXISTS (
   SELECT 1 FROM profiles 
   WHERE profiles.id = auth.uid() 
   AND profiles.role = 'publisher'

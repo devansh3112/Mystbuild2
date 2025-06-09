@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { DollarSign } from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
 
 interface Manuscript {
   id: string;
@@ -32,44 +33,11 @@ interface Offer {
   date: string;
 }
 
-const sampleManuscripts: Manuscript[] = [
-  {
-    id: "m1",
-    title: "The Haunting of Elmwood Manor",
-    synopsis: "A gothic tale of mystery and suspense in an old New England mansion.",
-    genre: "Mystery",
-    wordCount: 85000,
-    price: 2500,
-    dateAdded: "2025-04-15",
-    status: "listed",
-    offers: [
-      {
-        id: "o1",
-        publisherId: "p1",
-        publisherName: "Moonlight Publishing",
-        amount: 2300,
-        message: "We're interested in your gothic mystery. We specialize in this genre and believe our audience would love it.",
-        date: "2025-05-01"
-      }
-    ]
-  },
-  {
-    id: "m2",
-    title: "Whispers in the Wind",
-    synopsis: "A contemporary romance set in a coastal town.",
-    genre: "Romance",
-    wordCount: 72000,
-    price: 1800,
-    dateAdded: "2025-05-01",
-    status: "draft",
-    offers: []
-  }
-];
-
 const WriterMarketplace: React.FC = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [manuscripts, setManuscripts] = useState<Manuscript[]>(sampleManuscripts);
+  const [manuscripts, setManuscripts] = useState<Manuscript[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newManuscript, setNewManuscript] = useState({
     title: "",
@@ -79,40 +47,217 @@ const WriterMarketplace: React.FC = () => {
     price: 0
   });
 
-  const handleCreateSubmit = (e: React.FormEvent) => {
+  // Load manuscripts from database
+  useEffect(() => {
+    const loadManuscripts = async () => {
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+      
+      setLoading(true);
+      try {
+        console.log('Loading manuscripts for user:', user.id);
+        
+        // Fetch user's manuscripts from database
+        const { data: manuscriptsData, error } = await supabase
+          .from('manuscripts')
+          .select('*')
+          .eq('author_id', user.id)
+          .order('created_at', { ascending: false });
+        
+        console.log('Manuscripts query result:', { data: manuscriptsData, error });
+        
+        if (error) {
+          console.error('Error loading manuscripts:', error);
+          toast({
+            title: "Error",
+            description: `Failed to load manuscripts: ${error.message}`,
+            variant: "destructive"
+          });
+          setManuscripts([]);
+          setLoading(false);
+          return;
+        }
+
+        // Transform database format to component format
+        const transformedManuscripts = (manuscriptsData || []).map(dbManuscript => ({
+          id: dbManuscript.id,
+          title: dbManuscript.title,
+          synopsis: '', // No description field in database, using empty string
+          genre: dbManuscript.genre,
+          wordCount: dbManuscript.word_count || 0,
+          price: 0, // No price field in database yet
+          dateAdded: dbManuscript.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+          status: dbManuscript.status || 'New',
+          offers: []
+        }));
+        
+        console.log('Transformed manuscripts:', transformedManuscripts);
+        setManuscripts(transformedManuscripts);
+        
+      } catch (error) {
+        console.error('Error loading manuscripts:', error);
+        toast({
+          title: "Error",
+          description: `Failed to load manuscripts: ${error.message}`,
+          variant: "destructive"
+        });
+        setManuscripts([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadManuscripts();
+  }, [user, toast]);
+
+  const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const manuscript: Manuscript = {
-      id: `m${Date.now()}`,
-      title: newManuscript.title,
-      synopsis: newManuscript.synopsis,
-      genre: newManuscript.genre,
-      wordCount: newManuscript.wordCount,
-      price: newManuscript.price,
-      dateAdded: new Date().toISOString().split("T")[0],
-      status: "draft",
-      offers: []
-    };
+    console.log('Form submitted with data:', newManuscript);
     
-    setManuscripts([...manuscripts, manuscript]);
-    setShowNewForm(false);
-    setNewManuscript({ title: "", synopsis: "", genre: "", wordCount: 0, price: 0 });
-    
-    toast({
-      title: "Manuscript Added",
-      description: "Your manuscript has been added to your portfolio."
-    });
+    if (!user) {
+      toast({
+        title: "Error",
+        description: "You must be logged in to create manuscripts.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validate required fields
+    if (!newManuscript.title.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a manuscript title.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!newManuscript.genre) {
+      toast({
+        title: "Error",
+        description: "Please select a genre.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const manuscriptToInsert = {
+        title: newManuscript.title.trim(),
+        genre: newManuscript.genre,
+        word_count: newManuscript.wordCount,
+        author_id: user.id,
+        status: 'New',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      
+      console.log('Inserting manuscript:', manuscriptToInsert);
+      
+      // Save to database
+      const { data: savedManuscript, error } = await supabase
+        .from('manuscripts')
+        .insert([manuscriptToInsert])
+        .select()
+        .single();
+
+      console.log('Insert result:', { data: savedManuscript, error });
+
+      if (error) {
+        console.error('Error creating manuscript:', error);
+        toast({
+          title: "Error",
+          description: `Failed to create manuscript: ${error.message}`,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      if (!savedManuscript) {
+        console.error('No manuscript returned from insert');
+        toast({
+          title: "Error",
+          description: "Failed to create manuscript: No data returned",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Transform and add to local state
+      const manuscript = {
+        id: savedManuscript.id,
+        title: savedManuscript.title,
+        synopsis: '', // No description field in database
+        genre: savedManuscript.genre,
+        wordCount: savedManuscript.word_count || 0,
+        price: 0, // No price field in database yet
+        dateAdded: savedManuscript.created_at.split('T')[0],
+        status: savedManuscript.status || 'New',
+        offers: []
+      };
+      
+      console.log('Transformed manuscript:', manuscript);
+      
+      setManuscripts([manuscript, ...manuscripts]);
+      setShowNewForm(false);
+      setNewManuscript({ title: "", synopsis: "", genre: "", wordCount: 0, price: 0 });
+      
+      toast({
+        title: "Manuscript Added",
+        description: "Your manuscript has been added to your portfolio."
+      });
+    } catch (error) {
+      console.error('Error creating manuscript:', error);
+      toast({
+        title: "Error",
+        description: `Failed to create manuscript: ${error.message}`,
+        variant: "destructive"
+      });
+    }
   };
 
-  const handleStatusChange = (id: string, status: "draft" | "listed" | "sold") => {
-    setManuscripts(manuscripts.map(m => 
-      m.id === id ? { ...m, status } : m
-    ));
-    
-    toast({
-      title: "Status Updated",
-      description: `The manuscript status has been changed to ${status}.`
-    });
+  const handleStatusChange = async (id: string, status: "draft" | "listed" | "sold") => {
+    try {
+      // Update in database (using the status column that exists)
+      const { error } = await supabase
+        .from('manuscripts')
+        .update({ 
+          status: status,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+
+      if (error) {
+        console.error('Error updating manuscript status:', error);
+        toast({
+          title: "Error",
+          description: `Failed to update manuscript status: ${error.message}`,
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Update local state
+      setManuscripts(manuscripts.map(m => 
+        m.id === id ? { ...m, status } : m
+      ));
+      
+      toast({
+        title: "Status Updated",
+        description: `The manuscript status has been changed to ${status}.`
+      });
+    } catch (error) {
+      console.error('Error updating manuscript status:', error);
+      toast({
+        title: "Error",
+        description: `Failed to update manuscript status: ${error.message}`,
+        variant: "destructive"
+      });
+    }
   };
 
   const acceptOffer = (manuscriptId: string, offerId: string) => {
@@ -219,59 +364,76 @@ const WriterMarketplace: React.FC = () => {
               <CardDescription>Manage your manuscripts and review offers</CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Title</TableHead>
-                    <TableHead>Genre</TableHead>
-                    <TableHead>Word Count</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Offers</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {manuscripts.map((manuscript) => (
-                    <TableRow key={manuscript.id}>
-                      <TableCell className="font-medium">{manuscript.title}</TableCell>
-                      <TableCell>{manuscript.genre}</TableCell>
-                      <TableCell>{manuscript.wordCount}</TableCell>
-                      <TableCell>${manuscript.price}</TableCell>
-                      <TableCell>
-                        <Badge className={
-                          manuscript.status === "draft" ? "bg-gray-500" :
-                          manuscript.status === "listed" ? "bg-blue-500" :
-                          "bg-green-500"
-                        }>
-                          {manuscript.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{manuscript.offers.length}</TableCell>
-                      <TableCell className="text-right">
-                        {manuscript.status === "draft" && (
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleStatusChange(manuscript.id, "listed")}
-                          >
-                            List for Sale
-                          </Button>
-                        )}
-                        {manuscript.status === "listed" && (
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => handleStatusChange(manuscript.id, "draft")}
-                          >
-                            Unlist
-                          </Button>
-                        )}
-                      </TableCell>
+              {loading ? (
+                <div className="flex justify-center items-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-writer-primary"></div>
+                  <span className="ml-2">Loading manuscripts...</span>
+                </div>
+              ) : manuscripts.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-muted-foreground mb-4">No manuscripts yet.</p>
+                  <Button 
+                    onClick={() => setShowNewForm(true)}
+                    className="bg-writer-primary hover:bg-writer-primary/90"
+                  >
+                    Create Your First Manuscript
+                  </Button>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Title</TableHead>
+                      <TableHead>Genre</TableHead>
+                      <TableHead>Word Count</TableHead>
+                      <TableHead>Price</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Offers</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {manuscripts.map((manuscript) => (
+                      <TableRow key={manuscript.id}>
+                        <TableCell className="font-medium">{manuscript.title}</TableCell>
+                        <TableCell>{manuscript.genre}</TableCell>
+                        <TableCell>{manuscript.wordCount}</TableCell>
+                        <TableCell>${manuscript.price}</TableCell>
+                        <TableCell>
+                          <Badge className={
+                            manuscript.status === "draft" ? "bg-gray-500" :
+                            manuscript.status === "listed" ? "bg-blue-500" :
+                            "bg-green-500"
+                          }>
+                            {manuscript.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{manuscript.offers.length}</TableCell>
+                        <TableCell className="text-right">
+                          {manuscript.status === "draft" && (
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => handleStatusChange(manuscript.id, "listed")}
+                            >
+                              List for Sale
+                            </Button>
+                          )}
+                          {manuscript.status === "listed" && (
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => handleStatusChange(manuscript.id, "draft")}
+                            >
+                              Unlist
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
 
