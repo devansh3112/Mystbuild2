@@ -173,7 +173,7 @@ const Landing: React.FC = () => {
             <FeatureCard 
               icon={<DollarSign />}
               title="Secure Payments"
-              description="Integrated Paystack and MPesa payment options for your convenience."
+              description="Integrated M-Pesa payment options for your convenience."
               delay={0.2}
             />
             

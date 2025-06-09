@@ -1,214 +1,180 @@
-// Paystack/M-Pesa Payment Integration for Mystery Publishers
-import { config } from './config.js';
+// Flutterwave/M-Pesa Payment Integration for Mystery Publishers
+import config from './config.js';
 
-const PAYSTACK_PUBLIC_KEY = config.paystack.publicKey;
-const PAYSTACK_SECRET_KEY = config.paystack.secretKey;
+const FLUTTERWAVE_PUBLIC_KEY = config.flutterwave.publicKey;
+const FLUTTERWAVE_SECRET_KEY = config.flutterwave.secretKey;
 
-export const paymentMethods = {
-  MPESA: 'mpesa',
-  CARD: 'card',
-  BANK_TRANSFER: 'banktransfer',
-  MOBILE_MONEY: 'mobilemoney'
-};
+// Validate environment variables
+if (!FLUTTERWAVE_PUBLIC_KEY) {
+  console.error('Flutterwave public key is not configured');
+}
 
-// Generate a unique transaction reference
+if (!FLUTTERWAVE_SECRET_KEY) {
+  console.error('Flutterwave secret key is not configured');
+}
+
+// Helper function to generate a unique transaction reference
 export const generateTransactionRef = () => {
-  return `myst_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const timestamp = new Date().getTime();
+  const random = Math.floor(Math.random() * 1000000);
+  return `MP-${timestamp}-${random}`;
 };
 
-// Format phone number for M-Pesa (ensure it starts with country code)
-export const formatMpesaPhone = (phone, countryCode = '+254') => {
-  // Remove any non-digit characters
-  const cleanPhone = phone.replace(/\D/g, '');
+// Currency conversion helper
+export const convertCurrency = (amount, fromCurrency, toCurrency) => {
+  // In production, this should use a real exchange rate API
+  const exchangeRates = {
+    USD: 1,
+    KES: 150,
+  };
   
-  // If it starts with 0, replace with country code
-  if (cleanPhone.startsWith('0')) {
-    return countryCode + cleanPhone.substring(1);
-  }
-  
-  // If it doesn't start with country code, add it
-  if (!cleanPhone.startsWith(countryCode.replace('+', ''))) {
-    return countryCode + cleanPhone;
-  }
-  
-  return '+' + cleanPhone;
+  const usdAmount = amount / exchangeRates[fromCurrency];
+  return usdAmount * exchangeRates[toCurrency];
 };
 
-// Create Paystack payment configuration
-export const createPaystackConfig = ({
+// Create Flutterwave payment configuration
+export const createFlutterwaveConfig = ({
   amount,
-  currency = 'KES',
+  currency = 'USD',
   email,
-  phoneNumber,
+  phone_number,
   name,
-  title,
-  description,
-  paymentMethod = paymentMethods.MPESA,
-  redirectUrl,
-  onSuccess,
-  onError,
-  onClose
+  tx_ref = null,
+  callback_url = null,
+  customization = {}
 }) => {
-  const txRef = generateTransactionRef();
+  const transactionRef = tx_ref || generateTransactionRef();
   
-  const config = {
-    public_key: PAYSTACK_PUBLIC_KEY,
-    tx_ref: txRef,
+  return {
+    public_key: FLUTTERWAVE_PUBLIC_KEY,
+    tx_ref: transactionRef,
     amount: amount,
     currency: currency,
-    payment_options: paymentMethod,
+    payment_options: 'mobilemoneykenya,mobilemoneyuganda,mobilemoneytanzania,card',
     customer: {
       email: email,
-      phone_number: formatMpesaPhone(phoneNumber),
+      phone_number: phone_number,
       name: name,
     },
+    callback: callback_url || `${window.location.origin}/payment/callback`,
     customizations: {
-      title: title || 'Mystery Publishers Payment',
-      description: description || 'Payment for publishing services',
-      logo: '/logo.png', // Add your logo here
+      title: 'Mystery Publishers',
+      description: 'Payment for manuscript services',
+      logo: '/logo.png',
+      ...customization
     },
-    redirect_url: redirectUrl,
-    callback: onSuccess,
-    onclose: onClose,
     meta: {
-      platform: 'mystery_publishers',
-      source: 'web_app',
-      timestamp: new Date().toISOString()
+      platform: 'web',
+      source: 'mystery-publishers'
     }
   };
-
-  return config;
 };
 
-// Process M-Pesa payment specifically
-export const processMpesaPayment = async ({
+// Initialize payment with Flutterwave
+export const initializePayment = async ({
   amount,
-  phoneNumber,
   email,
+  phone_number,
   name,
-  description,
-  onSuccess,
-  onError,
-  onClose
+  currency = 'USD',
+  description = 'Payment for manuscript services'
 }) => {
   try {
-    const config = createPaystackConfig({
+    const config = createFlutterwaveConfig({
       amount,
-      currency: 'KES',
+      currency,
       email,
-      phoneNumber,
+      phone_number,
       name,
-      description,
-      paymentMethod: 'mpesa',
-      onSuccess: (response) => {
-        console.log('M-Pesa payment successful:', response);
-        if (onSuccess) onSuccess(response);
-      },
-      onError: (error) => {
-        console.error('M-Pesa payment error:', error);
-        if (onError) onError(error);
-      },
-      onClose: () => {
-        console.log('M-Pesa payment modal closed');
-        if (onClose) onClose();
-      }
+      customization: { description }
     });
 
-    return config;
+    // Return the config for Flutterwave React component
+    return {
+      success: true,
+      config: config,
+      tx_ref: config.tx_ref
+    };
   } catch (error) {
-    console.error('Error processing M-Pesa payment:', error);
-    if (onError) onError(error);
-    throw error;
+    console.error('Payment initialization error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
   }
 };
 
-// Verify payment with Paystack
+// Verify payment with Flutterwave
 export const verifyPayment = async (transactionId) => {
   try {
-    const response = await fetch(`https://api.paystack.co/transaction/verify/${transactionId}`, {
+    const response = await fetch(`https://api.flutterwave.com/v3/transactions/${transactionId}/verify`, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${PAYSTACK_SECRET_KEY}`,
+        'Authorization': `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
         'Content-Type': 'application/json',
       },
     });
 
-    if (!response.ok) {
-      throw new Error('Failed to verify payment');
-    }
-
     const data = await response.json();
-    return data;
+    
+    if (data.status === 'success') {
+      return {
+        success: true,
+        data: data.data,
+        transaction: data.data
+      };
+    } else {
+      return {
+        success: false,
+        error: data.message || 'Payment verification failed'
+      };
+    }
   } catch (error) {
     console.error('Payment verification error:', error);
-    throw error;
+    return {
+      success: false,
+      error: error.message
+    };
   }
 };
 
-// Currency conversion utilities
-export const currencyRates = config.currency.rates;
-
-export const convertUsdToKes = (usdAmount) => {
-  return Math.round(usdAmount * currencyRates.USD_TO_KES);
+// Format amount for display
+export const formatAmount = (amount, currency = 'USD') => {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currency,
+    minimumFractionDigits: 2
+  }).format(amount);
 };
 
-export const convertKesToUsd = (kesAmount) => {
-  return Math.round(kesAmount * currencyRates.KES_TO_USD * 100) / 100;
+// Validate payment amount
+export const validatePaymentAmount = (amount, currency = 'USD') => {
+  const minAmount = currency === 'KES' ? 10 : 1;
+  const maxAmount = currency === 'KES' ? 1000000 : 10000;
+  
+  if (amount < minAmount) {
+    return {
+      valid: false,
+      error: `Minimum amount is ${formatAmount(minAmount, currency)}`
+    };
+  }
+  
+  if (amount > maxAmount) {
+    return {
+      valid: false,
+      error: `Maximum amount is ${formatAmount(maxAmount, currency)}`
+    };
+  }
+  
+  return { valid: true };
 };
 
-// Payment validation
-export const validatePaymentData = (paymentData) => {
-  const { amount, email, phoneNumber, name } = paymentData;
-  
-  const errors = [];
-  
-  if (!amount || amount <= 0) {
-    errors.push('Amount must be greater than 0');
-  }
-  
-  if (!email || !email.includes('@')) {
-    errors.push('Valid email address is required');
-  }
-  
-  if (!phoneNumber || phoneNumber.length < 10) {
-    errors.push('Valid phone number is required');
-  }
-  
-  if (!name || name.trim().length < 2) {
-    errors.push('Name is required');
-  }
-  
-  return {
-    isValid: errors.length === 0,
-    errors
-  };
-};
-
-// Payment status constants
-export const PAYMENT_STATUS = {
-  PENDING: 'pending',
-  SUCCESSFUL: 'successful',
-  FAILED: 'failed',
-  CANCELLED: 'cancelled',
-  PROCESSING: 'processing'
-};
-
-// Create payment record for database
-export const createPaymentRecord = (paymentData, transactionRef) => {
-  return {
-    id: transactionRef,
-    amount: paymentData.amount,
-    currency: paymentData.currency || 'KES',
-    payment_method: paymentData.paymentMethod || 'mpesa',
-    customer_email: paymentData.email,
-    customer_phone: paymentData.phoneNumber,
-    customer_name: paymentData.name,
-    description: paymentData.description,
-    status: PAYMENT_STATUS.PENDING,
-    created_at: new Date().toISOString(),
-    metadata: {
-      platform: 'mystery_publishers',
-      source: 'web_app'
-    }
-  };
+export default {
+  generateTransactionRef,
+  convertCurrency,
+  createFlutterwaveConfig,
+  initializePayment,
+  verifyPayment,
+  formatAmount,
+  validatePaymentAmount
 }; 

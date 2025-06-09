@@ -18,7 +18,7 @@ const MpesaPayment = ({
 }) => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isValidPhone, setIsValidPhone] = useState(false);
-  const { toast } = useToast();
+  
   
   const {
     isProcessing,
@@ -68,10 +68,7 @@ const MpesaPayment = ({
       // Use the processMpesaDeposit from usePayments hook
       await processMpesaDeposit(amount, phoneNumber);
       
-      toast({
-        title: "Payment Initiated",
-        description: "Please check your phone for the M-Pesa prompt",
-      });
+      toast.success("Please check your phone for the M-Pesa prompt");
       
       if (onSuccess) {
         onSuccess({
@@ -84,11 +81,7 @@ const MpesaPayment = ({
       }
     } catch (error) {
       console.error('M-Pesa payment error:', error);
-      toast({
-        title: "Payment Failed",
-        description: "Your M-Pesa payment could not be processed. Please try again.",
-        variant: "destructive"
-      });
+      toast.error("Your M-Pesa payment could not be processed. Please try again.");
       if (onError) onError(error);
     }
   };

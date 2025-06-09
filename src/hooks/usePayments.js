@@ -1,199 +1,190 @@
 import { useState, useCallback } from 'react';
-import { useToast } from '@/components/ui/use-toast';
-import { useAuth } from '@/contexts/AuthContext';
-import {
-  createPaystackConfig,
-  processMpesaPayment,
-  verifyPayment,
-  validatePaymentData,
-  convertUsdToKes,
-  convertKesToUsd,
-  createPaymentRecord,
-  PAYMENT_STATUS
+import { supabase } from '@/lib/supabaseClient';
+import { 
+  generateTransactionRef,
+  createFlutterwaveConfig,
+  initializePayment,
+  verifyPayment
 } from '@/lib/payments';
+import { toast } from 'sonner';
 
 export const usePayments = () => {
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [paymentStatus, setPaymentStatus] = useState(null);
-  const [currentTransaction, setCurrentTransaction] = useState(null);
-  const { toast } = useToast();
-  const { user, updateUserBalance } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Initialize payment processing
-  const processPayment = useCallback(async (paymentData) => {
+  const createPayment = useCallback(async (paymentData) => {
+    setLoading(true);
+    setError(null);
+
     try {
-      setIsProcessing(true);
-      setPaymentStatus(PAYMENT_STATUS.PROCESSING);
-
-      // Validate payment data
-      const validation = validatePaymentData(paymentData);
-      if (!validation.isValid) {
-        throw new Error(validation.errors.join(', '));
-      }
-
-      // Convert USD to KES for M-Pesa (if needed)
-      const kesAmount = paymentData.currency === 'USD' 
-        ? convertUsdToKes(paymentData.amount)
-        : paymentData.amount;
-
-      // Create payment configuration
-      const config = createPaystackConfig({
-        amount: kesAmount,
-        currency: 'KES',
-        email: paymentData.email || user?.email || 'user@mystpublishers.com',
-        phoneNumber: paymentData.phoneNumber,
-        name: paymentData.name || user?.name || 'Mystery Publishers User',
-        description: paymentData.description || 'Mystery Publishers Payment',
-        paymentMethod: 'mpesa',
-        onSuccess: (response) => handlePaymentSuccess(response, paymentData),
-        onError: handlePaymentError,
-        onClose: handlePaymentClose
+      const txRef = generateTransactionRef();
+      
+      // Initialize payment with Flutterwave
+      const paymentResult = await initializePayment({
+        amount: paymentData.amount,
+        email: paymentData.email,
+        phone_number: paymentData.phone_number,
+        name: paymentData.name,
+        currency: paymentData.currency || 'USD',
+        description: paymentData.description
       });
 
-      setCurrentTransaction(config.tx_ref);
-      return config;
-
-    } catch (error) {
-      handlePaymentError(error);
-      throw error;
-    }
-  }, [user, toast]);
-
-  // Handle successful payment
-  const handlePaymentSuccess = useCallback(async (response, originalPaymentData) => {
-    try {
-      console.log('Payment successful:', response);
-      
-      // Verify the payment with Paystack
-      const verification = await verifyPayment(response.transaction_id);
-      
-      if (verification.status === 'success' && verification.data.status === 'successful') {
-        // Convert back to USD if original was in USD
-        const finalAmount = originalPaymentData.currency === 'USD' 
-          ? originalPaymentData.amount 
-          : convertKesToUsd(response.amount);
-
-        // Update user balance
-        if (originalPaymentData.type === 'deposit') {
-          updateUserBalance(finalAmount);
-        }
-
-        setPaymentStatus(PAYMENT_STATUS.SUCCESSFUL);
-        
-        toast({
-          title: "Payment Successful!",
-          description: `Your M-Pesa payment of ${originalPaymentData.currency === 'USD' ? '$' : 'KES '}${originalPaymentData.amount} has been processed successfully.`,
-          variant: "default"
-        });
-
-        // Create payment record for history
-        const paymentRecord = {
-          ...createPaymentRecord(originalPaymentData, response.tx_ref),
-          transaction_id: response.transaction_id,
-          status: PAYMENT_STATUS.SUCCESSFUL,
-          completed_at: new Date().toISOString(),
-          paystack_data: verification.data
-        };
-
-        return paymentRecord;
-      } else {
-        throw new Error('Payment verification failed');
+      if (!paymentResult.success) {
+        throw new Error(paymentResult.error || 'Failed to initialize payment');
       }
-    } catch (error) {
-      console.error('Error handling payment success:', error);
-      handlePaymentError(error);
-    } finally {
-      setIsProcessing(false);
+
+      const config = createFlutterwaveConfig({
+        amount: paymentData.amount,
+        email: paymentData.email,
+        phone_number: paymentData.phone_number,
+        name: paymentData.name,
+        currency: paymentData.currency || 'USD',
+        tx_ref: txRef,
+        customization: {
+          description: paymentData.description || 'Payment for manuscript services'
+        }
+      });
+
+      // Store payment record in database
+      const { data: payment, error: dbError } = await supabase
+        .from('payments')
+        .insert([{
+          id: txRef,
+          user_id: paymentData.user_id,
+          amount: paymentData.amount,
+          currency: paymentData.currency || 'USD',
+          payment_method: 'flutterwave',
+          status: 'pending',
+          description: paymentData.description,
+          customer_email: paymentData.email,
+          customer_phone: paymentData.phone_number,
+          customer_name: paymentData.name,
+          created_at: new Date().toISOString()
+        }])
+        .select()
+        .single();
+
+      if (dbError) {
+        console.error('Database error:', dbError);
+        throw new Error('Failed to create payment record');
+      }
+
+      setLoading(false);
+      return {
+        success: true,
+        payment: payment,
+        config: config,
+        tx_ref: txRef
+      };
+
+    } catch (err) {
+      console.error('Payment creation error:', err);
+      setError(err.message);
+      setLoading(false);
+      toast.error('Failed to create payment: ' + err.message);
+      return {
+        success: false,
+        error: err.message
+      };
     }
-  }, [updateUserBalance, toast]);
-
-  // Handle payment error
-  const handlePaymentError = useCallback((error) => {
-    console.error('Payment error:', error);
-    setPaymentStatus(PAYMENT_STATUS.FAILED);
-    setIsProcessing(false);
-    
-    toast({
-      title: "Payment Failed",
-      description: error.message || "There was an error processing your payment. Please try again.",
-      variant: "destructive"
-    });
-  }, [toast]);
-
-  // Handle payment modal close
-  const handlePaymentClose = useCallback(() => {
-    console.log('Payment modal closed');
-    setPaymentStatus(PAYMENT_STATUS.CANCELLED);
-    setIsProcessing(false);
   }, []);
 
-  // Process M-Pesa deposit
-  const processMpesaDeposit = useCallback(async (amount, phoneNumber) => {
+  const handlePaymentCallback = useCallback(async (response) => {
+    setLoading(true);
+    setError(null);
+
     try {
-      const paymentData = {
-        amount: amount,
-        currency: 'USD',
-        phoneNumber: phoneNumber,
-        email: user?.email,
-        name: user?.name,
-        description: `Account deposit - $${amount}`,
-        type: 'deposit'
+      // Verify the payment with Flutterwave
+      const verification = await verifyPayment(response.transaction_id);
+      
+      if (!verification.success) {
+        throw new Error(verification.error || 'Payment verification failed');
+      }
+
+      // Update payment record in database
+      const { data: payment, error: updateError } = await supabase
+        .from('payments')
+        .update({
+          status: verification.data.status === 'successful' ? 'completed' : 'failed',
+          transaction_id: response.transaction_id,
+          payment_provider: 'flutterwave',
+          flutterwave_data: verification.data
+        })
+        .eq('id', response.tx_ref)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('Update error:', updateError);
+        throw new Error('Failed to update payment record');
+      }
+
+      setLoading(false);
+      
+      if (verification.data.status === 'successful') {
+        toast.success('Payment completed successfully!');
+        return {
+          success: true,
+          payment: payment,
+          transaction: verification.data
+        };
+      } else {
+        toast.error('Payment failed. Please try again.');
+        return {
+          success: false,
+          error: 'Payment was not successful'
+        };
+      }
+
+    } catch (err) {
+      console.error('Payment callback error:', err);
+      setError(err.message);
+      setLoading(false);
+      toast.error('Payment verification failed: ' + err.message);
+      return {
+        success: false,
+        error: err.message
+      };
+    }
+  }, []);
+
+  const getPaymentHistory = useCallback(async (userId) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { data: payments, error: fetchError } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (fetchError) {
+        throw new Error('Failed to fetch payment history');
+      }
+
+      setLoading(false);
+      return {
+        success: true,
+        payments: payments || []
       };
 
-      return await processPayment(paymentData);
-    } catch (error) {
-      console.error('M-Pesa deposit error:', error);
-      throw error;
-    }
-  }, [processPayment, user]);
-
-  // Process M-Pesa payment for services
-  const processMpesaServicePayment = useCallback(async (amount, phoneNumber, serviceDescription) => {
-    try {
-      const paymentData = {
-        amount: amount,
-        currency: 'USD',
-        phoneNumber: phoneNumber,
-        email: user?.email,
-        name: user?.name,
-        description: serviceDescription,
-        type: 'service_payment'
+    } catch (err) {
+      console.error('Payment history error:', err);
+      setError(err.message);
+      setLoading(false);
+      return {
+        success: false,
+        error: err.message
       };
-
-      return await processPayment(paymentData);
-    } catch (error) {
-      console.error('M-Pesa service payment error:', error);
-      throw error;
     }
-  }, [processPayment, user]);
-
-  // Reset payment state
-  const resetPaymentState = useCallback(() => {
-    setPaymentStatus(null);
-    setCurrentTransaction(null);
-    setIsProcessing(false);
   }, []);
 
   return {
-    // State
-    isProcessing,
-    paymentStatus,
-    currentTransaction,
-    
-    // Methods
-    processPayment,
-    processMpesaDeposit,
-    processMpesaServicePayment,
-    resetPaymentState,
-    
-    // Handlers
-    handlePaymentSuccess,
-    handlePaymentError,
-    handlePaymentClose,
-    
-    // Utilities
-    convertUsdToKes,
-    convertKesToUsd,
-    validatePaymentData
+    loading,
+    error,
+    createPayment,
+    handlePaymentCallback,
+    getPaymentHistory
   };
 }; 

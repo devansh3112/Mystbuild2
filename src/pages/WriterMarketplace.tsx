@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/components/ui/use-toast";
+import { toast } from "sonner";
 import { DollarSign } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -35,7 +35,7 @@ interface Offer {
 
 const WriterMarketplace: React.FC = () => {
   const { user } = useAuth();
-  const { toast } = useToast();
+
   const [manuscripts, setManuscripts] = useState<Manuscript[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNewForm, setShowNewForm] = useState(false);
@@ -118,30 +118,18 @@ const WriterMarketplace: React.FC = () => {
     console.log('Form submitted with data:', newManuscript);
     
     if (!user) {
-      toast({
-        title: "Error",
-        description: "You must be logged in to create manuscripts.",
-        variant: "destructive"
-      });
+      toast.error("You must be logged in to create manuscripts.");
       return;
     }
 
     // Validate required fields
     if (!newManuscript.title.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter a manuscript title.",
-        variant: "destructive"
-      });
+      toast.error("Please enter a manuscript title.");
       return;
     }
 
     if (!newManuscript.genre) {
-      toast({
-        title: "Error",
-        description: "Please select a genre.",
-        variant: "destructive"
-      });
+      toast.error("Please select a genre.");
       return;
     }
 
@@ -179,11 +167,7 @@ const WriterMarketplace: React.FC = () => {
 
       if (!savedManuscript) {
         console.error('No manuscript returned from insert');
-        toast({
-          title: "Error",
-          description: "Failed to create manuscript: No data returned",
-          variant: "destructive"
-        });
+        toast.error("Failed to create manuscript: No data returned");
         return;
       }
 
@@ -206,10 +190,7 @@ const WriterMarketplace: React.FC = () => {
       setShowNewForm(false);
       setNewManuscript({ title: "", synopsis: "", genre: "", wordCount: 0, price: 0 });
       
-      toast({
-        title: "Manuscript Added",
-        description: "Your manuscript has been added to your portfolio."
-      });
+      toast.success("Your manuscript has been added to your portfolio.");
     } catch (error) {
       console.error('Error creating manuscript:', error);
       toast({
@@ -265,10 +246,8 @@ const WriterMarketplace: React.FC = () => {
       m.id === manuscriptId ? { ...m, status: "sold" } : m
     ));
     
-    toast({
-      title: "Offer Accepted",
-      description: "Congratulations! You have accepted the publisher's offer."
-    });
+    toast.success("Congratulations! You have accepted the publisher's offer."
+    );
   };
 
   if (!user) return null;

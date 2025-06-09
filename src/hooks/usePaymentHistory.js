@@ -1,255 +1,252 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/AuthContext';
-import { useToast } from '@/components/ui/use-toast';
+import { toast } from 'sonner';
 
 export const usePaymentHistory = () => {
   const [payments, setPayments] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const { user } = useAuth();
-  const { toast } = useToast();
 
-  // Fetch payment history for the current user
+  // Fetch payment history
   const fetchPayments = useCallback(async () => {
-    if (!user) {
-      setIsLoading(false);
-      return;
-    }
-
+    if (!user) return;
+    
+    setLoading(true);
+    setError(null);
+    
     try {
-      setIsLoading(true);
-      setError(null);
-
-      let query = supabase
+      const { data, error: fetchError } = await supabase
         .from('payments')
-        .select('*')
+        .select(`
+          *,
+          profiles:user_id (
+            name,
+            email
+          )
+        `)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      // Publishers can see all payments, others see only their own
-      if (user.role !== 'publisher') {
-        query = query.eq('user_id', user.id);
-      }
-
-      const { data, error: fetchError } = await query;
-
       if (fetchError) {
-        throw fetchError;
+        throw new Error(fetchError.message);
       }
 
       setPayments(data || []);
     } catch (err) {
       console.error('Error fetching payments:', err);
       setError(err.message);
+      toast.error('Failed to load payment history');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   }, [user]);
 
-  // Create a new payment record
-  const createPayment = useCallback(async (paymentData) => {
-    if (!user) {
-      throw new Error('User not authenticated');
-    }
+  // Add new payment to history
+  const addPayment = useCallback(async (paymentData) => {
+    if (!user) return null;
 
+    setLoading(true);
     try {
-      const paymentRecord = {
-        id: paymentData.id || `payment_${Date.now()}`,
+      const payment = {
+        id: paymentData.tx_ref || `FLW-${Date.now()}`,
         user_id: user.id,
         amount: paymentData.amount,
         currency: paymentData.currency || 'USD',
-        payment_method: paymentData.payment_method || 'mpesa',
-        payment_provider: paymentData.payment_provider || 'paystack',
-        transaction_id: paymentData.transaction_id,
+        payment_method: 'flutterwave',
+        payment_provider: paymentData.payment_provider || 'flutterwave',
         status: paymentData.status || 'pending',
-        customer_email: paymentData.customer_email || user.email,
-        customer_phone: paymentData.customer_phone,
-        customer_name: paymentData.customer_name || user.name,
-        description: paymentData.description,
-        metadata: paymentData.metadata || {},
+        description: paymentData.description || 'Payment for services',
+        customer_email: paymentData.customer?.email || user.email,
+        customer_phone: paymentData.customer?.phone_number || '',
+        customer_name: paymentData.customer?.name || user.name,
+        transaction_id: paymentData.transaction_id || null,
         created_at: new Date().toISOString(),
-        completed_at: paymentData.status === 'successful' ? new Date().toISOString() : null
+        flutterwave_data: paymentData.flutterwave_response || null
       };
 
       const { data, error: insertError } = await supabase
         .from('payments')
-        .insert([paymentRecord])
+        .insert([payment])
         .select()
         .single();
 
       if (insertError) {
-        throw insertError;
+        throw new Error(insertError.message);
       }
 
       // Add to local state
       setPayments(prev => [data, ...prev]);
-
+      
       return data;
     } catch (err) {
-      console.error('Error creating payment:', err);
-      throw err;
+      console.error('Error adding payment:', err);
+      setError(err.message);
+      toast.error('Failed to save payment record');
+      return null;
+    } finally {
+      setLoading(false);
     }
   }, [user]);
 
   // Update payment status
   const updatePaymentStatus = useCallback(async (paymentId, status, additionalData = {}) => {
+    setLoading(true);
     try {
       const updateData = {
         status,
+        updated_at: new Date().toISOString(),
         ...additionalData
       };
-
-      if (status === 'successful') {
-        updateData.completed_at = new Date().toISOString();
-      } else if (status === 'failed') {
-        updateData.failed_at = new Date().toISOString();
-      }
 
       const { data, error: updateError } = await supabase
         .from('payments')
         .update(updateData)
         .eq('id', paymentId)
+        .eq('user_id', user?.id)
         .select()
         .single();
 
       if (updateError) {
-        throw updateError;
+        throw new Error(updateError.message);
       }
 
       // Update local state
       setPayments(prev => 
         prev.map(payment => 
-          payment.id === paymentId ? { ...payment, ...data } : payment
+          payment.id === paymentId ? { ...payment, ...updateData } : payment
         )
       );
 
       return data;
     } catch (err) {
-      console.error('Error updating payment status:', err);
-      throw err;
+      console.error('Error updating payment:', err);
+      setError(err.message);
+      toast.error('Failed to update payment status');
+      return null;
+    } finally {
+      setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   // Get payment statistics
   const getPaymentStats = useCallback(() => {
-    const totalSuccessful = payments
-      .filter(p => p.status === 'successful')
-      .reduce((sum, p) => sum + parseFloat(p.amount), 0);
+    const stats = payments.reduce((acc, payment) => {
+      acc.total += 1;
+      
+      if (payment.status === 'completed') {
+        acc.successful += 1;
+        acc.totalAmount += parseFloat(payment.amount || 0);
+      } else if (payment.status === 'failed') {
+        acc.failed += 1;
+      } else if (payment.status === 'pending') {
+        acc.pending += 1;
+      }
+      
+      return acc;
+    }, {
+      total: 0,
+      successful: 0,
+      failed: 0,
+      pending: 0,
+      totalAmount: 0
+    });
 
-    const totalPending = payments
-      .filter(p => p.status === 'pending')
-      .reduce((sum, p) => sum + parseFloat(p.amount), 0);
-
-    const totalFailed = payments
-      .filter(p => p.status === 'failed')
-      .reduce((sum, p) => sum + parseFloat(p.amount), 0);
-
-    const mpesaPayments = payments.filter(p => p.payment_method === 'mpesa');
-    const cardPayments = payments.filter(p => p.payment_method === 'card');
-
-    return {
-      total: payments.length,
-      successful: payments.filter(p => p.status === 'successful').length,
-      pending: payments.filter(p => p.status === 'pending').length,
-      failed: payments.filter(p => p.status === 'failed').length,
-      totalAmount: totalSuccessful,
-      pendingAmount: totalPending,
-      failedAmount: totalFailed,
-      mpesaCount: mpesaPayments.length,
-      cardCount: cardPayments.length,
-      mpesaAmount: mpesaPayments
-        .filter(p => p.status === 'successful')
-        .reduce((sum, p) => sum + parseFloat(p.amount), 0),
-      cardAmount: cardPayments
-        .filter(p => p.status === 'successful')
-        .reduce((sum, p) => sum + parseFloat(p.amount), 0)
-    };
+    return stats;
   }, [payments]);
 
-  // Get recent payments
-  const getRecentPayments = useCallback((limit = 5) => {
-    return payments.slice(0, limit);
-  }, [payments]);
-
-  // Get payments by method
-  const getPaymentsByMethod = useCallback((method) => {
-    return payments.filter(p => p.payment_method === method);
-  }, [payments]);
-
-  // Get payments by status
-  const getPaymentsByStatus = useCallback((status) => {
-    return payments.filter(p => p.status === status);
-  }, [payments]);
-
-  // Handle M-Pesa payment completion
-  const handleMpesaPaymentComplete = useCallback(async (paystackResponse, originalAmount) => {
+  // Handle M-Pesa payment completion (via Flutterwave)
+  const handleMpesaPaymentComplete = useCallback(async (flutterwaveResponse, originalAmount) => {
     try {
-      const paymentRecord = await createPayment({
-        id: paystackResponse.tx_ref || paystackResponse.reference || `MP-${Date.now()}`,
+      const paymentData = {
+        id: flutterwaveResponse.tx_ref || flutterwaveResponse.reference || `FLW-${Date.now()}`,
         amount: originalAmount,
-        currency: 'USD',
+        currency: flutterwaveResponse.currency || 'KES',
         payment_method: 'mpesa',
-        payment_provider: 'paystack',
-        transaction_id: paystackResponse.transaction_id || paystackResponse.reference,
-        status: paystackResponse.status === 'successful' ? 'successful' : 'failed',
-        customer_phone: paystackResponse.customer?.phone_number || paystackResponse.phone_number,
-        description: `M-Pesa deposit - $${originalAmount}`,
-        metadata: {
-          paystack_response: paystackResponse,
-          conversion_rate: 150, // USD to KES rate
-          kes_amount: originalAmount * 150
-        }
-      });
+        payment_provider: 'flutterwave',
+        transaction_id: flutterwaveResponse.transaction_id || flutterwaveResponse.reference,
+        status: flutterwaveResponse.status === 'successful' ? 'successful' : 'failed',
+        customer_phone: flutterwaveResponse.customer?.phone_number || flutterwaveResponse.phone_number,
+        description: 'M-Pesa deposit via Flutterwave',
+        created_at: new Date().toISOString(),
+        flutterwave_response: flutterwaveResponse,
+      };
 
-      if (paystackResponse.status === 'successful') {
-        toast({
-          title: "Payment Recorded",
-          description: `M-Pesa payment of $${originalAmount} has been recorded successfully.`,
-        });
+      const addedPayment = await addPayment(paymentData);
+      
+      if (flutterwaveResponse.status === 'successful') {
+        toast.success(`M-Pesa payment of ${flutterwaveResponse.currency} ${originalAmount} completed successfully!`);
+      } else {
+        toast.error('M-Pesa payment failed. Please try again.');
       }
 
-      return paymentRecord;
-    } catch (err) {
-      console.error('Error handling M-Pesa payment completion:', err);
-      toast({
-        title: "Error",
-        description: "Payment was processed but could not be recorded. Please contact support.",
-        variant: "destructive"
-      });
-      throw err;
+      return addedPayment;
+    } catch (error) {
+      console.error('Error handling M-Pesa payment completion:', error);
+      toast.error('Error processing payment completion');
+      return null;
     }
-  }, [createPayment, toast]);
+  }, [addPayment]);
 
-  // Load payments on mount and when user changes
+  // Clear payment history (for testing)
+  const clearPaymentHistory = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      const { error: deleteError } = await supabase
+        .from('payments')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (deleteError) {
+        throw new Error(deleteError.message);
+      }
+
+      setPayments([]);
+      toast.success('Payment history cleared');
+    } catch (err) {
+      console.error('Error clearing payment history:', err);
+      setError(err.message);
+      toast.error('Failed to clear payment history');
+    }
+  }, [user]);
+
+  // Format payment for display
+  const formatPayment = useCallback((payment) => {
+    return {
+      ...payment,
+      formattedAmount: new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: payment.currency || 'USD'
+      }).format(payment.amount),
+      formattedDate: new Date(payment.created_at).toLocaleDateString(),
+      formattedDateTime: new Date(payment.created_at).toLocaleString(),
+      statusColor: {
+        completed: 'text-green-600',
+        successful: 'text-green-600',
+        pending: 'text-yellow-600',
+        failed: 'text-red-600',
+        cancelled: 'text-gray-600'
+      }[payment.status] || 'text-gray-600'
+    };
+  }, []);
+
+  // Load payments on component mount
   useEffect(() => {
     fetchPayments();
   }, [fetchPayments]);
 
   return {
-    // State
-    payments,
-    isLoading,
+    payments: payments.map(formatPayment),
+    loading,
     error,
-    
-    // Methods
+    stats: getPaymentStats(),
     fetchPayments,
-    createPayment,
+    addPayment,
     updatePaymentStatus,
     handleMpesaPaymentComplete,
-    
-    // Utilities
-    getPaymentStats,
-    getRecentPayments,
-    getPaymentsByMethod,
-    getPaymentsByStatus,
-    
-    // Computed values
-    stats: getPaymentStats(),
-    recentPayments: getRecentPayments(),
-    mpesaPayments: getPaymentsByMethod('mpesa'),
-    cardPayments: getPaymentsByMethod('card'),
-    pendingPayments: getPaymentsByStatus('pending'),
-    successfulPayments: getPaymentsByStatus('successful'),
-    failedPayments: getPaymentsByStatus('failed')
+    clearPaymentHistory,
+    formatPayment
   };
 }; 

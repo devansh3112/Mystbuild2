@@ -1,611 +1,373 @@
-import React, { useState } from "react";
-import DashboardLayout from "@/components/DashboardLayout";
-import { useAuth } from "@/contexts/AuthContext";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
+import React, { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/components/ui/use-toast";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { DollarSign, CreditCard, CheckCircle, XCircle, Smartphone, Receipt } from "lucide-react";
-import MpesaPayment from "@/components/MpesaPayment";
-import PaystackPayment from "@/components/PaystackPayment";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabaseClient";
+import { Wallet, Smartphone, DollarSign, TrendingUp, Clock, CheckCircle } from "lucide-react";
+import DashboardLayout from "@/components/DashboardLayout";
 import { usePayments } from "@/hooks/usePayments";
-import { usePaymentHistory } from "@/hooks/usePaymentHistory";
-import { AlertDescription } from "@/components/ui/alert";
+import { toast } from "sonner";
 
-interface PaymentTransaction {
-  id: string;
-  date: string;
-  description: string;
-  amount: number;
-  status: "pending" | "completed" | "failed";
-  counterparty: string;
-  type: "incoming" | "outgoing";
+// Declare Flutterwave global
+declare global {
+  interface Window {
+    FlutterwaveCheckout: (config: any) => void;
+  }
 }
 
-interface PendingPayment {
-  id: string;
-  recipient: {
-    id: string;
-    name: string;
-    role: "writer" | "editor";
-  };
-  description: string;
-  amount: number;
-  due: string;
-  milestone?: string;
-}
-
-const EmptyTransactionsState = () => (
-  <div className="text-center py-12">
-    <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
-      <Receipt size={24} className="text-muted-foreground" />
-    </div>
-    <h3 className="font-semibold mb-2">No transactions yet</h3>
-    <p className="text-muted-foreground">
-      Your payment transactions will appear here once you start using the platform
-    </p>
-  </div>
-);
-
-const EmptyPendingPaymentsState = () => (
-  <div className="text-center py-12">
-    <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
-      <DollarSign size={24} className="text-muted-foreground" />
-    </div>
-    <h3 className="font-semibold mb-2">No pending payments</h3>
-    <p className="text-muted-foreground">
-      Pending payments to writers and editors will appear here
-    </p>
-  </div>
-);
-
-const Payments: React.FC = () => {
-  const { user, updateUserBalance } = useAuth();
-  const { toast } = useToast();
+const Payments = () => {
+  const { user } = useAuth();
+  const { createPayment, loading: paymentLoading } = usePayments();
+  const [balance, setBalance] = useState(0);
+  const [paymentHistory, setPaymentHistory] = useState([]);
+  const [loading, setLoading] = useState(false);
   
-  // No sample data - user will have real transactions
-  const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
-  const [paymentRequests, setPaymentRequests] = useState<PendingPayment[]>([]);
-  
-  const [showAddFundsDialog, setShowAddFundsDialog] = useState(false);
-  const [addAmount, setAddAmount] = useState<number>(0);
-  const [showWithdrawDialog, setShowWithdrawDialog] = useState(false);
-  const [withdrawAmount, setWithdrawAmount] = useState<number>(0);
+  // M-Pesa payment states
   const [showMpesaDialog, setShowMpesaDialog] = useState(false);
-  const [showPaystackDialog, setShowPaystackDialog] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<string>('card');
-  
-  const { convertUsdToKes } = usePayments();
-  const { handleMpesaPaymentComplete, stats: paymentStats } = usePaymentHistory();
-  
-  const addFunds = () => {
-    if (addAmount > 0 && user) {
-      if (paymentMethod === 'mpesa') {
-        setShowMpesaDialog(true);
-        setShowAddFundsDialog(false);
-        return;
-      }
-      
-      if (paymentMethod === 'card') {
-        setShowPaystackDialog(true);
-        setShowAddFundsDialog(false);
-        return;
-      }
-    }
-  };
+  const [depositAmount, setDepositAmount] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
 
-  const handlePaystackSuccess = (response: any) => {
-    if (response.status === 'success' && user) {
-      updateUserBalance(addAmount);
-      
-      const newTransaction: PaymentTransaction = {
-        id: response.transaction_id,
-        date: new Date().toISOString().split('T')[0],
-        description: "Deposit to account via Paystack",
-        amount: addAmount,
-        status: "completed",
-        counterparty: "Paystack Payment",
-        type: "incoming"
-      };
-      
-      setTransactions([newTransaction, ...transactions]);
-      
-      toast({
-        title: "Funds Added",
-        description: `$${addAmount} has been added to your account.`
-      });
-      
-      setShowAddFundsDialog(false);
-      setAddAmount(0);
+  // Load user balance and payment history
+  useEffect(() => {
+    if (user) {
+      loadUserData();
     }
-  };
+  }, [user]);
 
-  const handleMpesaSuccess = async (response: any) => {
+  const loadUserData = async () => {
+    setLoading(true);
     try {
-      // Update user balance
-      updateUserBalance(addAmount);
-      
-      // Record payment in database
-      await handleMpesaPaymentComplete(response, addAmount);
-      
-      // Add to local transaction history
-      const newTransaction: PaymentTransaction = {
-        id: response.tx_ref || `mpesa-${Date.now()}`,
-        date: new Date().toISOString().split('T')[0],
-        description: "M-Pesa deposit to account",
-        amount: addAmount,
-        status: "completed",
-        counterparty: "M-Pesa",
-        type: "incoming"
-      };
-      
-      setTransactions([newTransaction, ...transactions]);
-      setShowMpesaDialog(false);
-      setAddAmount(0);
+      // Load user profile for balance
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('balance')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) {
+        console.error('Error loading profile:', profileError);
+      } else {
+        setBalance(profile?.balance || 0);
+      }
+
+      // Load payment history
+      const { data: payments, error: paymentsError } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (paymentsError) {
+        console.error('Error loading payments:', paymentsError);
+      } else {
+        setPaymentHistory(payments || []);
+      }
     } catch (error) {
-      console.error('Error handling M-Pesa success:', error);
-      // Still update UI even if database recording fails
-      updateUserBalance(addAmount);
+      console.error('Error loading user data:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleMpesaError = (error: any) => {
-    console.error('M-Pesa payment error:', error);
-    setShowMpesaDialog(false);
-  };
-
-  const handlePaystackError = (error: any) => {
-    console.error('Paystack payment error:', error);
-    setShowPaystackDialog(false);
-    toast({
-      title: "Payment Failed",
-      description: "There was an error processing your payment. Please try again.",
-      variant: "destructive"
-    });
-  };
-  
-  const withdrawFunds = () => {
-    if (withdrawAmount > 0 && user && (user.balance || 0) >= withdrawAmount) {
-      updateUserBalance(-withdrawAmount);
-      
-      const newTransaction: PaymentTransaction = {
-        id: `withdraw-${Date.now()}`,
-        date: new Date().toISOString().split('T')[0],
-        description: "Withdrawal to bank account",
-        amount: withdrawAmount,
-        status: "completed",
-        counterparty: "Bank Account",
-        type: "outgoing"
-      };
-      
-      setTransactions([newTransaction, ...transactions]);
-      
-      toast({
-        title: "Withdrawal Successful",
-        description: `$${withdrawAmount} has been withdrawn from your account.`
-      });
-      
-      setShowWithdrawDialog(false);
-      setWithdrawAmount(0);
-    } else if ((user?.balance || 0) < withdrawAmount) {
-      toast({
-        title: "Insufficient Funds",
-        description: "You don't have enough funds for this withdrawal.",
-        variant: "destructive"
-      });
-    }
-  };
-  
-  const processPayment = (paymentId: string) => {
-    const payment = paymentRequests.find(p => p.id === paymentId);
-    if (!payment || !user) return;
-    
-    if ((user.balance || 0) < payment.amount) {
-      toast({
-        title: "Insufficient Funds",
-        description: "You don't have enough funds to make this payment.",
-        variant: "destructive"
-      });
+  const handleMpesaDeposit = async () => {
+    if (!depositAmount || parseFloat(depositAmount) <= 0) {
+      toast.error("Please enter a valid amount");
       return;
     }
-    
-    updateUserBalance(-payment.amount);
-    
-    const newTransaction: PaymentTransaction = {
-      id: `payment-${Date.now()}`,
-      date: new Date().toISOString().split('T')[0],
-      description: payment.description,
-      amount: payment.amount,
-      status: "completed",
-      counterparty: payment.recipient.name,
-      type: "outgoing"
-    };
-    
-    setTransactions([newTransaction, ...transactions]);
-    setPaymentRequests(paymentRequests.filter(p => p.id !== paymentId));
-    
-    toast({
-      title: "Payment Successful",
-      description: `$${payment.amount} has been sent to ${payment.recipient.name}.`
+    if (!phoneNumber) {
+      toast.error("Please enter your phone number");
+      return;
+    }
+
+    try {
+      // Format phone number to Kenyan format
+      let formattedPhone = phoneNumber.replace(/\D/g, '');
+      if (formattedPhone.startsWith('0')) {
+        formattedPhone = '254' + formattedPhone.substring(1);
+      } else if (!formattedPhone.startsWith('254')) {
+        formattedPhone = '254' + formattedPhone;
+      }
+
+      // Create payment using Flutterwave
+      const paymentResult = await createPayment({
+        amount: parseFloat(depositAmount),
+        currency: 'USD',
+        email: user.email,
+        phone_number: formattedPhone,
+        name: user.name || user.email,
+        user_id: user.id,
+        description: `Deposit to Mystery Publishers account - $${depositAmount}`
+      });
+
+      if (paymentResult.success) {
+        // Redirect to Flutterwave payment portal
+        const flutterwaveConfig = paymentResult.config;
+        
+        // Load Flutterwave script if not already loaded
+        if (!window.FlutterwaveCheckout) {
+          const script = document.createElement('script');
+          script.src = 'https://checkout.flutterwave.com/v3.js';
+          script.onload = () => {
+            initiateFlutterwavePayment(flutterwaveConfig);
+          };
+          document.head.appendChild(script);
+        } else {
+          initiateFlutterwavePayment(flutterwaveConfig);
+        }
+
+        setShowMpesaDialog(false);
+      } else {
+        toast.error(paymentResult.error || "Failed to initiate payment");
+      }
+    } catch (error) {
+      console.error('Error initiating M-Pesa payment:', error);
+      toast.error("Failed to initiate payment. Please try again.");
+    }
+  };
+
+  const initiateFlutterwavePayment = (config) => {
+    window.FlutterwaveCheckout({
+      ...config,
+      callback: (response) => {
+        console.log('Payment response:', response);
+        if (response.status === 'successful') {
+          handlePaymentSuccess(response);
+        } else {
+          toast.error("Payment was not completed successfully");
+        }
+      },
+      onclose: () => {
+        console.log('Payment dialog closed');
+      }
     });
   };
 
-  if (!user) return null;
+  const handlePaymentSuccess = async (response) => {
+    try {
+      // Update user balance
+      const newBalance = balance + parseFloat(depositAmount);
+      
+      const { error: balanceError } = await supabase
+        .from('profiles')
+        .update({ balance: newBalance })
+        .eq('id', user.id);
 
-  const getRoleSpecificContent = () => {
-    switch (user.role) {
-      case "publisher": // Changed from "admin" to "publisher"
-        return (
-          <>
-            <Card>
-              <CardHeader>
-                <CardTitle>Pending Payments</CardTitle>
-                <CardDescription>Payments that need to be processed</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {paymentRequests.length === 0 ? (
-                  <EmptyPendingPaymentsState />
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Recipient</TableHead>
-                        <TableHead>Role</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead>Amount</TableHead>
-                        <TableHead>Due Date</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {paymentRequests.map((payment) => (
-                        <TableRow key={payment.id}>
-                          <TableCell className="font-medium">{payment.recipient.name}</TableCell>
-                          <TableCell className="capitalize">{payment.recipient.role}</TableCell>
-                          <TableCell>{payment.description}</TableCell>
-                          <TableCell>${payment.amount}</TableCell>
-                          <TableCell>{new Date(payment.due).toLocaleDateString()}</TableCell>
-                          <TableCell className="text-right">
-                            <Button 
-                              onClick={() => processPayment(payment.id)}
-                              size="sm"
-                              className="bg-publisher-primary hover:bg-publisher-primary/90"
-                            >
-                              Pay Now
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
-          </>
-        );
-      case "writer":
-        return null; // Additional writer-specific content could go here
-      case "editor":
-        return null; // Additional editor-specific content could go here
+      if (balanceError) {
+        console.error('Error updating balance:', balanceError);
+        toast.error("Payment successful but failed to update balance");
+        return;
+      }
+
+      // Update payment record
+      const { error: paymentError } = await supabase
+        .from('payments')
+        .update({
+          status: 'completed',
+          transaction_id: response.transaction_id,
+          payment_provider: 'flutterwave'
+        })
+        .eq('id', response.tx_ref);
+
+      if (paymentError) {
+        console.error('Error updating payment:', paymentError);
+      }
+
+      setBalance(newBalance);
+      setDepositAmount('');
+      setPhoneNumber('');
+      
+      toast.success(`Successfully deposited $${depositAmount} to your account!`);
+      
+      // Reload payment history
+      loadUserData();
+    } catch (error) {
+      console.error('Error processing successful payment:', error);
+      toast.error("Error processing payment completion");
+    }
+  };
+
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD'
+    }).format(amount);
+  };
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'completed':
+      case 'successful':
+        return 'text-green-600';
+      case 'pending':
+        return 'text-yellow-600';
+      case 'failed':
+        return 'text-red-600';
       default:
-        return null;
+        return 'text-gray-600';
+    }
+  };
+
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'completed':
+      case 'successful':
+        return <CheckCircle className="h-4 w-4 text-green-600" />;
+      case 'pending':
+        return <Clock className="h-4 w-4 text-yellow-600" />;
+      default:
+        return <Clock className="h-4 w-4 text-gray-600" />;
     }
   };
 
   return (
-    <DashboardLayout role={user.role}>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-playfair">Payments</h1>
-          <p className="text-muted-foreground mt-1">Manage your financial transactions</p>
+    <DashboardLayout role={user?.role || "writer"}>
+      <div className="container mx-auto p-6 max-w-6xl">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Payment Center</h1>
+          <p className="text-gray-600">Manage your payments and view transaction history</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Balance Card */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <Card className="bg-gradient-to-r from-blue-500 to-purple-600 text-white">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-white">
+                <Wallet className="h-5 w-5" />
+                Account Balance
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{formatCurrency(balance)}</div>
+              <p className="text-blue-100 text-sm mt-1">Available for use</p>
+            </CardContent>
+          </Card>
+
           <Card>
-            <CardHeader>
-              <CardTitle>Balance</CardTitle>
-              <CardDescription>Your current account balance</CardDescription>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-green-600" />
+                Total Deposits
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">${user.balance?.toFixed(2) || "0.00"}</div>
-            </CardContent>
-            <CardFooter className="flex justify-between">
-              <Button 
-                variant="outline" 
-                onClick={() => setShowAddFundsDialog(true)}
-              >
-                Add Funds
-              </Button>
-              <Button 
-                variant="outline"
-                onClick={() => setShowWithdrawDialog(true)}
-                disabled={(user.balance || 0) <= 0}
-              >
-                Withdraw
-              </Button>
-            </CardFooter>
-          </Card>
-          
-          <Card className="md:col-span-2">
-            <CardHeader>
-              <CardTitle>Transaction Summary</CardTitle>
-              <CardDescription>Overview of your recent activity</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="flex flex-col items-center p-4 border rounded-lg">
-                  <span className="text-lg font-medium text-muted-foreground">Income</span>
-                  <span className="text-2xl font-bold text-green-600 mt-2">
-                    ${transactions
-                      .filter(t => t.type === 'incoming' && t.status === 'completed')
-                      .reduce((sum, t) => sum + t.amount, 0)
-                      .toFixed(2)
-                    }
-                  </span>
-                </div>
-                <div className="flex flex-col items-center p-4 border rounded-lg">
-                  <span className="text-lg font-medium text-muted-foreground">Expenses</span>
-                  <span className="text-2xl font-bold text-red-600 mt-2">
-                    ${transactions
-                      .filter(t => t.type === 'outgoing' && t.status === 'completed')
-                      .reduce((sum, t) => sum + t.amount, 0)
-                      .toFixed(2)
-                    }
-                  </span>
-                </div>
+              <div className="text-2xl font-bold text-green-600">
+                {formatCurrency(paymentHistory.filter(p => p.status === 'completed').reduce((sum, p) => sum + p.amount, 0))}
               </div>
+              <p className="text-gray-600 text-sm mt-1">Lifetime deposits</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-blue-600" />
+                Recent Transactions
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{paymentHistory.length}</div>
+              <p className="text-gray-600 text-sm mt-1">Total transactions</p>
             </CardContent>
           </Card>
         </div>
 
-        {getRoleSpecificContent()}
+        {/* Deposit Section */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Smartphone className="h-5 w-5 text-green-600" />
+              Deposit Funds via M-Pesa
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="deposit-amount">Deposit Amount (USD)</Label>
+                <Input
+                  id="deposit-amount"
+                  type="number"
+                  placeholder="0.00"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  min="1"
+                  step="0.01"
+                />
+              </div>
+              <div>
+                <Label htmlFor="phone-number">M-Pesa Phone Number</Label>
+                <Input
+                  id="phone-number"
+                  type="tel"
+                  placeholder="0712345678"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                />
+              </div>
+            </div>
+            <Button 
+              onClick={handleMpesaDeposit}
+              disabled={paymentLoading || !depositAmount || !phoneNumber}
+              className="w-full bg-green-600 hover:bg-green-700"
+            >
+              <Smartphone className="h-4 w-4 mr-2" />
+              {paymentLoading ? "Processing..." : "Pay with M-Pesa"}
+            </Button>
+            <p className="text-sm text-gray-600">
+              You will be redirected to the M-Pesa payment portal to complete your transaction securely.
+            </p>
+          </CardContent>
+        </Card>
 
+        {/* Payment History */}
         <Card>
           <CardHeader>
-            <CardTitle>Transaction History</CardTitle>
-            <CardDescription>Record of your payments and receipts</CardDescription>
+            <CardTitle>Payment History</CardTitle>
           </CardHeader>
           <CardContent>
-            {transactions.length === 0 ? (
-              <EmptyTransactionsState />
+            {paymentHistory.length === 0 ? (
+              <div className="text-center py-8">
+                <DollarSign className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No payment history</h3>
+                <p className="text-gray-600">Your payment transactions will appear here.</p>
+              </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>{user.role === "publisher" ? "User" : "From/To"}</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {transactions.map((transaction) => (
-                    <TableRow key={transaction.id}>
-                      <TableCell>{new Date(transaction.date).toLocaleDateString()}</TableCell>
-                      <TableCell className="font-medium">{transaction.description}</TableCell>
-                      <TableCell>{transaction.counterparty}</TableCell>
-                      <TableCell>${transaction.amount}</TableCell>
-                      <TableCell>
-                        <Badge className={transaction.type === "incoming" ? "bg-green-500" : "bg-amber-500"}>
-                          {transaction.type === "incoming" ? "Received" : "Sent"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center">
-                          {transaction.status === "completed" ? (
-                            <CheckCircle size={16} className="mr-2 text-green-500" />
-                          ) : transaction.status === "failed" ? (
-                            <XCircle size={16} className="mr-2 text-red-500" />
-                          ) : (
-                            <div className="w-4 h-4 rounded-full bg-amber-500 mr-2" />
-                          )}
-                          <span className="capitalize">{transaction.status}</span>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <div className="space-y-4">
+                {paymentHistory.map((payment) => (
+                  <div key={payment.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      {getStatusIcon(payment.status)}
+                      <div>
+                        <p className="font-medium">{payment.description || "Account Deposit"}</p>
+                        <p className="text-sm text-gray-600">{formatDate(payment.created_at)}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold">{formatCurrency(payment.amount)}</p>
+                      <p className={`text-sm capitalize ${getStatusColor(payment.status)}`}>
+                        {payment.status}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
       </div>
-
-      <Dialog open={showAddFundsDialog} onOpenChange={setShowAddFundsDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Funds</DialogTitle>
-            <DialogDescription>
-              Add money to your account
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="amount">Amount ($)</Label>
-              <Input 
-                id="amount" 
-                type="number" 
-                min="1" 
-                step="0.01" 
-                value={addAmount || ""}
-                onChange={(e) => setAddAmount(Number(e.target.value))}
-                placeholder="Enter amount"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Payment Method</Label>
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  type="button"
-                  variant={paymentMethod === 'card' ? 'default' : 'outline'}
-                  onClick={() => setPaymentMethod('card')}
-                  className="h-auto p-4 flex flex-col items-center gap-2"
-                >
-                  <CreditCard className="w-6 h-6" />
-                  <span>Card Payment</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant={paymentMethod === 'mpesa' ? 'default' : 'outline'}
-                  onClick={() => setPaymentMethod('mpesa')}
-                  className="h-auto p-4 flex flex-col items-center gap-2 bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
-                >
-                  <Smartphone className="w-6 h-6" />
-                  <span>M-Pesa</span>
-                </Button>
-              </div>
-            </div>
-
-            {paymentMethod === 'card' && (
-              <div className="space-y-2">
-                <Label htmlFor="card">Card Details</Label>
-                <div className="flex items-center border rounded-md p-3 bg-muted/30">
-                  <CreditCard className="mr-2" />
-                  <span>•••• •••• •••• 4242</span>
-                </div>
-                <AlertDescription>
-                  Payment will be processed securely. Please review your payment details before proceeding.
-                </AlertDescription>
-              </div>
-            )}
-
-            {paymentMethod === 'mpesa' && (
-              <div className="space-y-2">
-                <Label>M-Pesa Payment</Label>
-                <div className="flex items-center border rounded-md p-3 bg-green-50 border-green-200">
-                  <Smartphone className="mr-2 text-green-600" />
-                  <span>Pay securely with M-Pesa mobile money</span>
-                </div>
-                <div className="text-sm text-green-700 bg-green-50 p-3 rounded">
-                  <p><strong>Amount in KES:</strong> KES {convertUsdToKes(addAmount).toLocaleString()}</p>
-                  <p className="text-xs mt-1">You'll be redirected to complete payment via M-Pesa</p>
-                </div>
-                <AlertDescription>
-                  Payment will be processed securely. Please review your payment details before proceeding.
-                </AlertDescription>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddFundsDialog(false)}>Cancel</Button>
-            <Button onClick={addFunds} disabled={addAmount <= 0}>
-              {paymentMethod === 'mpesa' ? (
-                <>
-                  <Smartphone className="w-4 h-4 mr-2" />
-                  Pay with M-Pesa
-                </>
-              ) : (
-                <>
-                  <CreditCard className="w-4 h-4 mr-2" />
-                  Add Funds
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showWithdrawDialog} onOpenChange={setShowWithdrawDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Withdraw Funds</DialogTitle>
-            <DialogDescription>
-              Withdraw money to your bank account
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="withdrawAmount">Amount ($)</Label>
-              <Input 
-                id="withdrawAmount" 
-                type="number" 
-                min="1" 
-                max={user?.balance || 0}
-                step="0.01" 
-                value={withdrawAmount || ""}
-                onChange={(e) => setWithdrawAmount(Number(e.target.value))}
-                placeholder="Enter amount"
-              />
-              <p className="text-sm text-muted-foreground">
-                Available balance: ${user?.balance?.toFixed(2) || "0.00"}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="bankAccount">Bank Account</Label>
-              <div className="flex items-center justify-between">
-                <span>Bank Account</span>
-                <span>•••• 5678</span>
-              </div>
-              <AlertDescription>
-                Payment will be processed securely. Please review your payment details before proceeding.
-              </AlertDescription>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowWithdrawDialog(false)}>Cancel</Button>
-            <Button 
-              onClick={withdrawFunds} 
-              disabled={withdrawAmount <= 0 || withdrawAmount > (user?.balance || 0)}
-            >
-              Withdraw Funds
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* M-Pesa Payment Dialog */}
-      <Dialog open={showMpesaDialog} onOpenChange={setShowMpesaDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Smartphone className="w-5 h-5 text-green-600" />
-              M-Pesa Payment
-            </DialogTitle>
-            <DialogDescription>
-              Complete your payment using M-Pesa mobile money
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <MpesaPayment
-              amount={addAmount}
-              currency="USD"
-              description={`Account deposit - $${addAmount}`}
-              onSuccess={handleMpesaSuccess}
-              onError={handleMpesaError}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Paystack Payment Dialog */}
-      <Dialog open={showPaystackDialog} onOpenChange={setShowPaystackDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Paystack Payment</DialogTitle>
-            <DialogDescription>
-              Complete your payment using Paystack's secure gateway
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <PaystackPayment
-              amount={addAmount}
-              email={user?.email || ""}
-              onSuccess={handlePaystackSuccess}
-              onError={handlePaystackError}
-              onClose={() => setShowPaystackDialog(false)}
-              metadata={{
-                customerName: user?.name || "Unknown User"
-              }}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
     </DashboardLayout>
   );
 };

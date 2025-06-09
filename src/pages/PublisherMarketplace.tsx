@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/components/ui/use-toast";
+import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { DollarSign, Users } from "lucide-react";
 
@@ -104,7 +104,7 @@ const sampleOwnedManuscripts: OwnedManuscript[] = [
 
 const PublisherMarketplace: React.FC = () => {
   const { user } = useAuth();
-  const { toast } = useToast();
+  
   const [marketplace, setMarketplace] = useState<Manuscript[]>(sampleMarketplace);
   const [ownedManuscripts, setOwnedManuscripts] = useState<OwnedManuscript[]>(sampleOwnedManuscripts);
   const [selectedManuscript, setSelectedManuscript] = useState<Manuscript | null>(null);
@@ -152,10 +152,7 @@ const PublisherMarketplace: React.FC = () => {
   };
 
   const listForEditing = (manuscriptId: string) => {
-    toast({
-      title: "Manuscript Listed",
-      description: "Your manuscript is now listed for editors to apply."
-    });
+    toast.success("Your manuscript is now listed for editors to apply.");
   };
 
   if (!user) return null;

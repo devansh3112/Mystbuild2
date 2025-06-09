@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/components/ui/use-toast";
+import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { DollarSign, FileText } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -52,7 +52,7 @@ interface MyAssignment {
 
 const EditorMarketplace: React.FC = () => {
   const { user } = useAuth();
-  const { toast } = useToast();
+  
   const [assignments, setAssignments] = useState<EditorAssignment[]>([]);
   const [myCurrentAssignments, setMyCurrentAssignments] = useState<MyAssignment[]>([]);
   const [selectedAssignment, setSelectedAssignment] = useState<EditorAssignment | null>(null);
@@ -120,10 +120,8 @@ const EditorMarketplace: React.FC = () => {
         : assignment
     ));
     
-    toast({
-      title: "Payment Requested",
-      description: "You've requested payment for this milestone."
-    });
+    toast.success("You've requested payment for this milestone."
+    );
   };
 
   if (!user) return null;

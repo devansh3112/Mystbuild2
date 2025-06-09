@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useToast } from "@/components/ui/use-toast";
+import { toast } from "sonner";
 import { 
   ArrowLeft, 
   User, 
@@ -38,7 +38,7 @@ const USE_SUPABASE_DATA = true;
 const ManuscriptDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
-  const { toast } = useToast();
+  
   
   // Use the manuscript hook with feature flag
   const { manuscript, isLoading, error } = useManuscript(id, {
@@ -110,11 +110,7 @@ const ManuscriptDetail: React.FC = () => {
       });
       // Optionally refresh the data here
     } else {
-      toast({
-        title: "Update Failed", 
-        description: result.error,
-        variant: "destructive",
-      });
+      toast.error(result.error);
     }
   };
 
@@ -132,11 +128,7 @@ const ManuscriptDetail: React.FC = () => {
       });
       // Optionally refresh the data here
     } else {
-      toast({
-        title: "Assignment Failed",
-        description: result.error,
-        variant: "destructive",
-      });
+      toast.error(result.error);
     }
   };
 
