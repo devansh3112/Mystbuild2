@@ -1,190 +1,251 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { 
+import {
   generateTransactionRef,
-  createFlutterwaveConfig,
-  initializePayment,
-  verifyPayment
+  initializePaystackTransaction,
+  verifyPayment,
+  validatePaymentAmount
 } from '@/lib/payments';
 import { toast } from 'sonner';
 
 export const usePayments = () => {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
 
-  const createPayment = useCallback(async (paymentData) => {
+  const processPayment = useCallback(async (paymentData) => {
     setLoading(true);
-    setError(null);
-
     try {
-      const txRef = generateTransactionRef();
-      
-      // Initialize payment with Flutterwave
-      const paymentResult = await initializePayment({
-        amount: paymentData.amount,
-        email: paymentData.email,
-        phone_number: paymentData.phone_number,
-        name: paymentData.name,
-        currency: paymentData.currency || 'USD',
-        description: paymentData.description
-      });
+      const {
+        amount,
+        currency = 'NGN',
+        email,
+        phone,
+        name,
+        description = 'Payment for manuscript services',
+        user_id
+      } = paymentData;
 
-      if (!paymentResult.success) {
-        throw new Error(paymentResult.error || 'Failed to initialize payment');
+      // Validate payment amount
+      const validation = validatePaymentAmount(amount, currency);
+      if (!validation.valid) {
+        toast.error(validation.error);
+        return { success: false, error: validation.error };
       }
 
-      const config = createFlutterwaveConfig({
-        amount: paymentData.amount,
-        email: paymentData.email,
-        phone_number: paymentData.phone_number,
-        name: paymentData.name,
-        currency: paymentData.currency || 'USD',
-        tx_ref: txRef,
-        customization: {
-          description: paymentData.description || 'Payment for manuscript services'
+      // Generate transaction reference
+      const reference = generateTransactionRef();
+
+      // Initialize payment with Paystack
+      const paymentResult = await initializePaystackTransaction({
+        amount,
+        email,
+        currency,
+        reference,
+        metadata: {
+          user_id,
+          phone,
+          name,
+          description
         }
       });
 
-      // Store payment record in database
-      const { data: payment, error: dbError } = await supabase
-        .from('payments')
-        .insert([{
-          id: txRef,
-          user_id: paymentData.user_id,
-          amount: paymentData.amount,
-          currency: paymentData.currency || 'USD',
-          payment_method: 'flutterwave',
-          status: 'pending',
-          description: paymentData.description,
-          customer_email: paymentData.email,
-          customer_phone: paymentData.phone_number,
-          customer_name: paymentData.name,
-          created_at: new Date().toISOString()
-        }])
+      if (!paymentResult.success) {
+        toast.error(paymentResult.error || 'Failed to initialize payment');
+        return paymentResult;
+      }
+
+      // Save transaction to database
+      const transactionData = {
+        id: reference,
+        user_id,
+        amount,
+        currency,
+        status: 'pending',
+        payment_method: 'paystack',
+        transaction_ref: reference,
+        email,
+        phone: phone || null,
+        metadata: {
+          paystack_reference: reference,
+          authorization_url: paymentResult.authorization_url,
+          access_code: paymentResult.access_code,
+          description
+        },
+        created_at: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase
+        .from('transactions')
+        .insert([transactionData])
         .select()
         .single();
 
-      if (dbError) {
-        console.error('Database error:', dbError);
-        throw new Error('Failed to create payment record');
+      if (error) {
+        console.error('Error saving transaction:', error);
+        toast.error('Payment initialized but failed to save transaction');
+        return { success: false, error: error.message };
       }
 
-      setLoading(false);
       return {
         success: true,
-        payment: payment,
-        config: config,
-        tx_ref: txRef
+        data,
+        reference,
+        authorization_url: paymentResult.authorization_url,
+        access_code: paymentResult.access_code
       };
 
-    } catch (err) {
-      console.error('Payment creation error:', err);
-      setError(err.message);
+    } catch (error) {
+      console.error('Payment processing error:', error);
+      toast.error('An error occurred while processing payment');
+      return { success: false, error: error.message };
+    } finally {
       setLoading(false);
-      toast.error('Failed to create payment: ' + err.message);
-      return {
-        success: false,
-        error: err.message
-      };
     }
   }, []);
 
-  const handlePaymentCallback = useCallback(async (response) => {
+  const verifyPaymentStatus = useCallback(async (reference) => {
     setLoading(true);
-    setError(null);
-
     try {
-      // Verify the payment with Flutterwave
-      const verification = await verifyPayment(response.transaction_id);
-      
+      // Verify with Paystack
+      const verification = await verifyPayment(reference);
+
       if (!verification.success) {
-        throw new Error(verification.error || 'Payment verification failed');
+        return { success: false, error: verification.error };
       }
 
-      // Update payment record in database
-      const { data: payment, error: updateError } = await supabase
-        .from('payments')
+      const transaction = verification.transaction;
+      
+      // Update transaction in database
+      const { data, error } = await supabase
+        .from('transactions')
         .update({
-          status: verification.data.status === 'successful' ? 'completed' : 'failed',
-          transaction_id: response.transaction_id,
-          payment_provider: 'flutterwave',
-          flutterwave_data: verification.data
+          status: transaction.status === 'success' ? 'completed' : 'failed',
+          metadata: {
+            ...transaction,
+            verified_at: new Date().toISOString()
+          },
+          updated_at: new Date().toISOString()
         })
-        .eq('id', response.tx_ref)
+        .eq('transaction_ref', reference)
         .select()
         .single();
 
-      if (updateError) {
-        console.error('Update error:', updateError);
-        throw new Error('Failed to update payment record');
+      if (error) {
+        console.error('Error updating transaction:', error);
+        return { success: false, error: error.message };
       }
 
-      setLoading(false);
-      
-      if (verification.data.status === 'successful') {
-        toast.success('Payment completed successfully!');
-        return {
-          success: true,
-          payment: payment,
-          transaction: verification.data
-        };
-      } else {
-        toast.error('Payment failed. Please try again.');
-        return {
-          success: false,
-          error: 'Payment was not successful'
-        };
-      }
-
-    } catch (err) {
-      console.error('Payment callback error:', err);
-      setError(err.message);
-      setLoading(false);
-      toast.error('Payment verification failed: ' + err.message);
       return {
-        success: false,
-        error: err.message
+        success: true,
+        data,
+        transaction,
+        status: transaction.status
       };
+
+    } catch (error) {
+      console.error('Payment verification error:', error);
+      return { success: false, error: error.message };
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  const getPaymentHistory = useCallback(async (userId) => {
+  const getPaymentHistory = useCallback(async (userId, limit = 20) => {
     setLoading(true);
-    setError(null);
-
     try {
-      const { data: payments, error: fetchError } = await supabase
-        .from('payments')
+      const { data, error } = await supabase
+        .from('transactions')
         .select('*')
         .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(limit);
 
-      if (fetchError) {
-        throw new Error('Failed to fetch payment history');
+      if (error) {
+        console.error('Error fetching payment history:', error);
+        return { success: false, error: error.message };
       }
 
-      setLoading(false);
-      return {
-        success: true,
-        payments: payments || []
-      };
+      return { success: true, data };
 
-    } catch (err) {
-      console.error('Payment history error:', err);
-      setError(err.message);
+    } catch (error) {
+      console.error('Error in getPaymentHistory:', error);
+      return { success: false, error: error.message };
+    } finally {
       setLoading(false);
-      return {
-        success: false,
-        error: err.message
-      };
+    }
+  }, []);
+
+  const cancelPayment = useCallback(async (reference) => {
+    setLoading(true);
+    try {
+      // Update transaction status to cancelled
+      const { data, error } = await supabase
+        .from('transactions')
+        .update({
+          status: 'cancelled',
+          updated_at: new Date().toISOString()
+        })
+        .eq('transaction_ref', reference)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error cancelling payment:', error);
+        return { success: false, error: error.message };
+      }
+
+      return { success: true, data };
+
+    } catch (error) {
+      console.error('Error in cancelPayment:', error);
+      return { success: false, error: error.message };
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const refundPayment = useCallback(async (reference, reason = '') => {
+    setLoading(true);
+    try {
+      // Note: Paystack refunds require API calls to their refund endpoint
+      // This is a placeholder for the refund logic
+      console.log('Refund initiated for:', reference, reason);
+
+      // Update transaction status to refunded
+      const { data, error } = await supabase
+        .from('transactions')
+        .update({
+          status: 'refunded',
+          metadata: {
+            refund_reason: reason,
+            refunded_at: new Date().toISOString()
+          },
+          updated_at: new Date().toISOString()
+        })
+        .eq('transaction_ref', reference)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error processing refund:', error);
+        return { success: false, error: error.message };
+      }
+
+      return { success: true, data };
+
+    } catch (error) {
+      console.error('Error in refundPayment:', error);
+      return { success: false, error: error.message };
+    } finally {
+      setLoading(false);
     }
   }, []);
 
   return {
     loading,
-    error,
-    createPayment,
-    handlePaymentCallback,
-    getPaymentHistory
+    processPayment,
+    verifyPaymentStatus,
+    getPaymentHistory,
+    cancelPayment,
+    refundPayment
   };
 }; 

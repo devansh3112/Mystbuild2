@@ -13,14 +13,12 @@ const config = {
     serviceRoleKey: import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY
   },
 
-  // Flutterwave Configuration (Restored)
-  flutterwave: {
-    publicKey: import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY,
-    secretKey: import.meta.env.VITE_FLUTTERWAVE_SECRET_KEY,
-    isTestMode: import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY?.includes('test'),
-    baseUrl: import.meta.env.VITE_FLUTTERWAVE_PUBLIC_KEY?.includes('test')
-      ? 'https://api.flutterwave.com/v3'
-      : 'https://api.flutterwave.com/v3'
+  // Paystack Configuration
+  paystack: {
+    publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
+    secretKey: import.meta.env.VITE_PAYSTACK_SECRET_KEY,
+    isTestMode: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY?.includes('test'),
+    baseUrl: 'https://api.paystack.co'
   },
 
   // M-Pesa Configuration
@@ -89,8 +87,8 @@ const config = {
 const requiredEnvVars = [
   'VITE_SUPABASE_URL',
   'VITE_SUPABASE_ANON_KEY',
-  'VITE_FLUTTERWAVE_PUBLIC_KEY',
-  'VITE_FLUTTERWAVE_SECRET_KEY'
+  'VITE_PAYSTACK_PUBLIC_KEY',
+  'VITE_PAYSTACK_SECRET_KEY'
 ];
 
 const missingEnvVars = requiredEnvVars.filter(envVar => !import.meta.env[envVar]);
