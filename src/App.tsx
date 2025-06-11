@@ -17,7 +17,6 @@ import MyScripts from "./pages/MyScripts";
 import Messages from "./pages/Messages";
 import Assignments from "./pages/Assignments";
 import LiveEdits from "./pages/LiveEdits";
-import WriterMarketplace from "./pages/WriterMarketplace";
 import EditorMarketplace from "./pages/EditorMarketplace";
 import PublisherMarketplace from "./pages/PublisherMarketplace";
 import Payments from "./pages/Payments";
@@ -77,7 +76,7 @@ const DashboardRouter = () => {
   }
 };
 
-// Role-specific marketplace routing
+// Role-specific marketplace routing (Writers excluded)
 const MarketplaceRouter = () => {
   const { user, loading } = useAuth();
   
@@ -89,7 +88,8 @@ const MarketplaceRouter = () => {
   
   switch (user.role) {
     case "writer":
-      return <WriterMarketplace />;
+      // Writers no longer have access to marketplace
+      return <Navigate to="/dashboard" replace />;
     case "editor":
       return <EditorMarketplace />;
     case "publisher":

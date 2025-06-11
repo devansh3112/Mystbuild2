@@ -85,13 +85,6 @@ const getRoleSpecificLinks = (role: UserRole, pathname: string) => {
       isActive: pathname === "/messages",
       forRoles: ["writer", "editor"] as UserRole[]
     },
-    {
-      to: "/marketplace",
-      icon: <ShoppingBag size={20} />,
-      label: "Marketplace",
-      isActive: pathname === "/marketplace",
-      forRoles: ["writer"] as UserRole[]
-    },
   ];
 
   const editorLinks = [
