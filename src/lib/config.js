@@ -5,14 +5,14 @@ const config = {
     url: import.meta.env.VITE_APP_URL || "http://localhost:3000",
     environment: import.meta.env.MODE || "development"
   },
-
+  
   // Database Configuration  
   supabase: {
     url: import.meta.env.VITE_SUPABASE_URL,
     anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
     serviceRoleKey: import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY
   },
-
+  
   // Paystack Configuration
   paystack: {
     publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
@@ -20,7 +20,7 @@ const config = {
     isTestMode: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY?.includes('test'),
     baseUrl: 'https://api.paystack.co'
   },
-
+  
   // M-Pesa Configuration
   mpesa: {
     consumerKey: import.meta.env.VITE_MPESA_CONSUMER_KEY,
@@ -53,7 +53,7 @@ const config = {
       "text/plain"
     ]
   },
-
+  
   // Feature Flags
   features: {
     enablePayments: true,
@@ -68,14 +68,14 @@ const config = {
     timeout: 30000, // 30 seconds
     retries: 3
   },
-
+  
   // Security Configuration
   security: {
     enableCSRF: true,
     enableRateLimit: true,
     sessionTimeout: 24 * 60 * 60 * 1000 // 24 hours
   },
-
+  
   // Debug Configuration
   debug: {
     enableConsoleLog: import.meta.env.MODE === "development",
@@ -85,14 +85,14 @@ const config = {
 
 // Validate required environment variables
 const requiredEnvVars = [
-  'VITE_SUPABASE_URL',
-  'VITE_SUPABASE_ANON_KEY',
+    'VITE_SUPABASE_URL',
+    'VITE_SUPABASE_ANON_KEY',
   'VITE_PAYSTACK_PUBLIC_KEY',
   'VITE_PAYSTACK_SECRET_KEY'
-];
-
+  ];
+  
 const missingEnvVars = requiredEnvVars.filter(envVar => !import.meta.env[envVar]);
-
+  
 if (missingEnvVars.length > 0 && import.meta.env.MODE !== 'test') {
   console.warn('Missing required environment variables:', missingEnvVars);
 }

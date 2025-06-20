@@ -66,7 +66,7 @@ const EditorDashboard: React.FC = () => {
   const { user } = useAuth();
 
   return (
-    <DashboardLayout role="editor">
+          <DashboardLayout allowedRoles={["editor", "publisher"]}>
       <div className="space-y-6 animate-fade-in">
         <div>
           <h1 className="text-3xl font-bold">Editor Dashboard</h1>

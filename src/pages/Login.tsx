@@ -22,7 +22,10 @@ const Login: React.FC = () => {
     try {
       await login(email, password);
       toast.success("Login successful!");
-      navigate("/dashboard");
+      // Temporary workaround: force redirect after a short delay
+      setTimeout(() => {
+        navigate("/dashboard");
+      }, 1000);
     } catch (error: any) {
       // Display appropriate error messages based on error type
       if (error.message === "Invalid login credentials") {
@@ -51,7 +54,7 @@ const Login: React.FC = () => {
       setIsLoading(false);
     }
   };
-
+  
   const handleForgotPassword = async () => {
     if (!email) {
       toast.error("Please enter your email address first.");

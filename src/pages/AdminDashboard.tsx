@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +12,11 @@ import {
   CheckCircle,
   Clock,
   Calendar,
-  ChevronDown
+  ChevronDown,
+  UserPlus,
+  AlertCircle,
+  DollarSign,
+  Mail
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
@@ -32,6 +36,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAdminData } from "@/hooks/useAdminData";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { supabase } from "@/lib/supabaseClient";
+import { toast } from "sonner";
 
 // FEATURE FLAG - set to true to use real Supabase data
 const USE_SUPABASE_DATA = true;
@@ -103,16 +112,158 @@ const editorPerformance = [
   }
 ];
 
+interface EditorInvitation {
+  id: string;
+  email: string;
+  name: string;
+  status: 'pending' | 'accepted' | 'expired';
+  created_at: string;
+  expires_at: string;
+}
+
+interface Editor {
+  id: string;
+  name: string;
+  email: string;
+  specialties?: string[];
+  total_manuscripts_edited: number;
+  average_rating: number;
+  availability_status: string;
+}
+
 const AdminDashboard: React.FC = () => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [timeframe, setTimeframe] = React.useState("this-month");
   const { isLoading, error, dashboardData } = useAdminData({ useRealData: USE_SUPABASE_DATA });
+  const [loading, setLoading] = useState(true);
+  const [editorInvitations, setEditorInvitations] = useState<EditorInvitation[]>([]);
+  const [editors, setEditors] = useState<Editor[]>([]);
+  const [showInviteDialog, setShowInviteDialog] = useState(false);
+  const [inviteForm, setInviteForm] = useState({ name: '', email: '' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [invitationResult, setInvitationResult] = useState<{
+    success: boolean;
+    invitation_url: string;
+    email: string;
+    name: string;
+  } | null>(null);
+
+  // Existing dashboard data states
+  const [totalManuscripts, setTotalManuscripts] = useState(0);
+  const [activeEditors, setActiveEditors] = useState(0);
+  const [totalRevenue, setTotalRevenue] = useState(0);
 
   // Debug user information
   useEffect(() => {
     console.log("AdminDashboard - Current user:", user);
     console.log("AdminDashboard - Data loading status:", { isLoading, error, hasData: !!dashboardData });
   }, [user, isLoading, error, dashboardData]);
+
+  useEffect(() => {
+    if (user && user.role === 'publisher') {
+      fetchDashboardData();
+      fetchEditorInvitations();
+      fetchEditors();
+    }
+  }, [user]);
+
+  const fetchDashboardData = async () => {
+    try {
+      // Fetch manuscripts count
+      const { count: manuscriptsCount } = await supabase
+        .from('manuscripts')
+        .select('*', { count: 'exact', head: true });
+
+      // Fetch active editors count
+      const { count: editorsCount } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('role', 'editor');
+
+      setTotalManuscripts(manuscriptsCount || 0);
+      setActiveEditors(editorsCount || 0);
+      setTotalRevenue(12500); // Mock data for now
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    }
+  };
+
+  const fetchEditorInvitations = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('editor_invitations')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setEditorInvitations(data || []);
+    } catch (error) {
+      console.error('Error fetching editor invitations:', error);
+    }
+  };
+
+  const fetchEditors = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'editor')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setEditors(data || []);
+    } catch (error) {
+      console.error('Error fetching editors:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleInviteEditor = async () => {
+    if (!inviteForm.name || !inviteForm.email) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { data, error } = await supabase.rpc('create_editor_invitation', {
+        editor_email: inviteForm.email,
+        editor_name: inviteForm.name
+      });
+
+      if (error) throw error;
+
+      // Store the invitation result to show the URL
+      setInvitationResult({
+        success: true,
+        invitation_url: data.invitation_url,
+        email: inviteForm.email,
+        name: inviteForm.name
+      });
+
+      toast.success('Editor invitation created successfully!');
+      setInviteForm({ name: '', email: '' });
+      fetchEditorInvitations();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to send invitation');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return <Clock className="h-4 w-4 text-yellow-500" />;
+      case 'accepted':
+        return <CheckCircle className="h-4 w-4 text-green-500" />;
+      case 'expired':
+        return <AlertCircle className="h-4 w-4 text-red-500" />;
+      default:
+        return <Clock className="h-4 w-4 text-gray-500" />;
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -179,7 +330,7 @@ const AdminDashboard: React.FC = () => {
   // If loading with real data and still loading, show loading state
   if (USE_SUPABASE_DATA && isLoading) {
     return (
-      <DashboardLayout role="publisher">
+      <DashboardLayout allowedRoles={["publisher"]}>
         <div className="animate-fade-in">
           <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
             <div>
@@ -240,7 +391,7 @@ const AdminDashboard: React.FC = () => {
   // If error with real data, show error
   if (USE_SUPABASE_DATA && error) {
     return (
-      <DashboardLayout role="publisher">
+      <DashboardLayout allowedRoles={["publisher"]}>
         <div className="flex items-center justify-center h-[80vh]">
           <div className="text-center">
             <p className="text-lg text-red-500">Error loading dashboard data</p>
@@ -257,8 +408,28 @@ const AdminDashboard: React.FC = () => {
     return metric ? metric.change_percent : 0;
   };
 
+  if (authLoading || loading) {
+    return (
+      <DashboardLayout allowedRoles={["publisher"]}>
+        <div className="flex items-center justify-center h-96">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!user || user.role !== 'publisher') {
+    return (
+      <DashboardLayout allowedRoles={["publisher"]}>
+        <div className="flex items-center justify-center h-96">
+          <p className="text-muted-foreground">Access denied. Publisher role required.</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   return (
-    <DashboardLayout role="publisher">
+    <DashboardLayout allowedRoles={["publisher"]}>
       <div className="space-y-6 animate-fade-in">
         <div className="flex flex-wrap justify-between items-center gap-4">
           <div>
@@ -516,6 +687,207 @@ const AdminDashboard: React.FC = () => {
             </Button>
           </CardFooter>
         </Card>
+
+        {/* Editor Management Section */}
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* Editor Invitations */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Editor Invitations</CardTitle>
+                  <CardDescription>Manage editor invitations and onboarding</CardDescription>
+                </div>
+                <Dialog open={showInviteDialog} onOpenChange={(open) => {
+                  setShowInviteDialog(open);
+                  if (!open) {
+                    setInvitationResult(null);
+                  }
+                }}>
+                  <DialogTrigger asChild>
+                    <Button>
+                      <UserPlus className="h-4 w-4 mr-2" />
+                      Invite Editor
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-lg">
+                    <DialogHeader>
+                      <DialogTitle>
+                        {invitationResult ? 'Invitation Created!' : 'Invite New Editor'}
+                      </DialogTitle>
+                      <DialogDescription>
+                        {invitationResult 
+                          ? 'Share the invitation link below with the editor'
+                          : 'Create an invitation for a new editor to join the platform'
+                        }
+                      </DialogDescription>
+                    </DialogHeader>
+                    
+                    {!invitationResult ? (
+                      <div className="space-y-4">
+                        <div>
+                          <Label htmlFor="name">Full Name</Label>
+                          <Input
+                            id="name"
+                            value={inviteForm.name}
+                            onChange={(e) => setInviteForm({ ...inviteForm, name: e.target.value })}
+                            placeholder="Editor's full name"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="email">Email Address</Label>
+                          <Input
+                            id="email"
+                            type="email"
+                            value={inviteForm.email}
+                            onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
+                            placeholder="editor@example.com"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                          <div className="flex items-center space-x-2 mb-2">
+                            <CheckCircle className="h-5 w-5 text-green-600" />
+                            <span className="font-medium text-green-800">
+                              Invitation created for {invitationResult.name}
+                            </span>
+                          </div>
+                          <p className="text-sm text-green-700">
+                            Email: {invitationResult.email}
+                          </p>
+                        </div>
+                        
+                        <div>
+                          <Label htmlFor="invitation-url">Invitation Link</Label>
+                          <div className="flex space-x-2 mt-1">
+                            <Input
+                              id="invitation-url"
+                              value={invitationResult.invitation_url}
+                              readOnly
+                              className="font-mono text-sm"
+                            />
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                navigator.clipboard.writeText(invitationResult.invitation_url);
+                                toast.success('Invitation link copied to clipboard!');
+                              }}
+                            >
+                              Copy
+                            </Button>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Send this link to the editor. They can use it to create their account and set their password.
+                          </p>
+                        </div>
+                        
+                        <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                          <p className="text-sm text-blue-800">
+                            <span className="font-medium">Next steps:</span>
+                            <br />
+                            1. Copy the invitation link above
+                            <br />
+                            2. Send it to {invitationResult.name} via email or message
+                            <br />
+                            3. They will click the link and set up their account
+                          </p>
+                        </div>
+                        
+                        <div className="p-3 bg-gray-50 rounded-lg border">
+                          <p className="text-sm font-medium text-gray-800 mb-2">Sample Email Template:</p>
+                          <div className="text-xs text-gray-700 space-y-1">
+                            <p><span className="font-medium">Subject:</span> Invitation to join Mystery Publishers as an Editor</p>
+                            <div className="mt-2 p-2 bg-white rounded border text-xs">
+                              <p>Hi {invitationResult.name},</p>
+                              <br />
+                              <p>You've been invited to join Mystery Publishers as an editor. Click the link below to create your account and set your password:</p>
+                              <br />
+                              <p className="font-mono text-blue-600">{invitationResult.invitation_url}</p>
+                              <br />
+                              <p>This invitation expires in 7 days.</p>
+                              <br />
+                              <p>Best regards,<br />Mystery Publishers Team</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    <DialogFooter>
+                      {!invitationResult ? (
+                        <>
+                          <Button variant="outline" onClick={() => setShowInviteDialog(false)}>
+                            Cancel
+                          </Button>
+                          <Button onClick={handleInviteEditor} disabled={isSubmitting}>
+                            {isSubmitting ? 'Creating...' : 'Create Invitation'}
+                          </Button>
+                        </>
+                      ) : (
+                        <Button onClick={() => setShowInviteDialog(false)}>
+                          Done
+                        </Button>
+                      )}
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {editorInvitations.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">No pending invitations</p>
+                ) : (
+                  editorInvitations.slice(0, 5).map((invitation) => (
+                    <div key={invitation.id} className="flex items-center justify-between p-2 border rounded">
+                      <div className="flex items-center space-x-3">
+                        {getStatusIcon(invitation.status)}
+                        <div>
+                          <p className="font-medium text-sm">{invitation.name}</p>
+                          <p className="text-xs text-muted-foreground">{invitation.email}</p>
+                        </div>
+                      </div>
+                      <Badge variant={invitation.status === 'accepted' ? 'default' : 'secondary'}>
+                        {invitation.status}
+                      </Badge>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Active Editors */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Active Editors</CardTitle>
+              <CardDescription>Current editors on the platform</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {editors.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">No editors yet</p>
+                ) : (
+                  editors.slice(0, 5).map((editor) => (
+                    <div key={editor.id} className="flex items-center justify-between p-2 border rounded">
+                      <div>
+                        <p className="font-medium text-sm">{editor.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {editor.total_manuscripts_edited} manuscripts • {editor.average_rating}★ rating
+                        </p>
+                      </div>
+                      <Badge variant={editor.availability_status === 'available' ? 'default' : 'secondary'}>
+                        {editor.availability_status}
+                      </Badge>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </DashboardLayout>
   );

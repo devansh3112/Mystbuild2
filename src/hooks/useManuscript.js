@@ -68,13 +68,13 @@ export const useManuscript = (manuscriptId, options = {}) => {
 
         console.log("Fetching manuscript data for ID:", manuscriptId);
 
-        // Fetch the manuscript with author profile
+        // Fetch the manuscript with author profile (no email field in profiles)
         const { data: manuscriptData, error: manuscriptError } = await supabase
           .from('manuscripts')
           .select(`
             *,
-            author:profiles!manuscripts_author_id_fkey(*),
-            editor:profiles!manuscripts_editor_id_fkey(*)
+            author:profiles!manuscripts_author_id_fkey(id, name, role, avatar_url),
+            editor:profiles!manuscripts_editor_id_fkey(id, name, role, avatar_url)
           `)
           .eq('id', manuscriptId)
           .single();

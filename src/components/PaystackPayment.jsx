@@ -10,14 +10,37 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
-import { formatAmount, validatePaymentAmount, generateTransactionRef } from "@/lib/payments";
+import { formatAmount, generateTransactionRef } from "@/lib/payments";
+
+// Local validation function since import might be causing issues
+const validatePaymentAmount = (amount, currency = 'NGN') => {
+  if (!amount || amount <= 0) {
+    return { valid: false, error: 'Amount must be greater than 0' };
+  }
+  
+  const minAmounts = {
+    NGN: 100,
+    USD: 1,
+    GHS: 1,
+    KES: 10
+  };
+  
+  const minAmount = minAmounts[currency] || 100;
+  
+  if (amount < minAmount) {
+    return { valid: false, error: `Minimum amount is ${currency} ${minAmount}` };
+  }
+  
+  return { valid: true };
+};
 
 const PaystackPayment = ({ 
   amount = 100, 
   onSuccess = () => {}, 
   onError = () => {},
   currency = "NGN",
-  description = "Payment for manuscript services"
+  description = "Payment for manuscript services",
+  manuscriptId = null
 }) => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -27,13 +50,42 @@ const PaystackPayment = ({
   const [selectedCurrency, setSelectedCurrency] = useState(currency);
   const [paymentAmount, setPaymentAmount] = useState(amount);
 
+  // Get Paystack public key with fallback
+  const paystackPublicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || 'pk_test_2448cc156decb57761a7af852d830c3e41fdbee7';
+  
+  console.log('Paystack Public Key loaded:', paystackPublicKey);
+  console.log('All env vars:', import.meta.env);
+  
+  // Check if Paystack key is available
+  if (!paystackPublicKey || paystackPublicKey === 'undefined') {
+    console.error('Paystack public key is not configured properly');
+    return (
+      <Card className="w-full max-w-md mx-auto">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-red-600">
+            <AlertCircle className="h-5 w-5" />
+            Payment Configuration Error
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Payment system is not properly configured. Please contact support.
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+    );
+  }
+
   // Initialize Paystack payment
-  const config = {
+  const paystackConfig = {
     reference: generateTransactionRef(),
     email: email,
     amount: Math.round(paymentAmount * 100), // Convert to smallest currency unit
     currency: selectedCurrency,
-    publicKey: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
+    publicKey: paystackPublicKey,
     text: 'Pay Now',
     onSuccess: (reference) => {
       console.log('Payment successful:', reference);
@@ -59,12 +111,13 @@ const PaystackPayment = ({
       ],
       platform: 'web',
       source: 'mystery-publishers',
-      description: description
+      description: description,
+      manuscript_id: manuscriptId
     },
     channels: ['card', 'bank', 'ussd', 'qr', 'mobile_money', 'bank_transfer']
   };
 
-  const initializePayment = usePaystackPayment(config);
+  const initializePayment = usePaystackPayment(paystackConfig);
 
   const handlePaymentSuccess = async (reference) => {
     try {
@@ -81,9 +134,11 @@ const PaystackPayment = ({
         transaction_ref: reference.reference,
         email: email,
         phone: phone || null,
+        manuscript_id: manuscriptId,
         metadata: {
           reference: reference,
-          description: description
+          description: description,
+          manuscript_id: manuscriptId
         },
         created_at: new Date().toISOString()
       };

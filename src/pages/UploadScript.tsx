@@ -88,23 +88,34 @@ const UploadScript: React.FC = () => {
     return link.includes("docs.google.com") || link.includes("drive.google.com");
   };
 
-  const uploadFile = async (file: File, bucket: string, fileName: string) => {
+  const uploadFileToStorage = async (file: File, bucket: string, filePath: string) => {
     try {
+      console.log(`Uploading ${file.name} to ${bucket}/${filePath}`);
+      
       const { data, error } = await supabase.storage
         .from(bucket)
-        .upload(fileName, file, {
+        .upload(filePath, file, {
           cacheControl: '3600',
           upsert: false
         });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Storage upload error:', error);
+        throw new Error(`Storage upload failed: ${error.message}`);
+      }
       
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from(bucket)
-        .getPublicUrl(fileName);
+      console.log('Upload successful:', data);
       
-      return urlData.publicUrl;
+      // Get public URL for covers, signed URL for manuscripts
+      if (bucket === 'covers') {
+        const { data: urlData } = supabase.storage
+          .from(bucket)
+          .getPublicUrl(filePath);
+        return urlData.publicUrl;
+      } else {
+        // For manuscripts, we'll store the path and create signed URLs when needed
+        return filePath;
+      }
     } catch (error) {
       console.error('File upload error:', error);
       throw error;
@@ -150,27 +161,33 @@ const UploadScript: React.FC = () => {
     
     try {
       let fileUrl = null;
+      let filePath = null;
       let coverUrl = null;
+      let coverPath = null;
       
       // Upload manuscript file if provided
       if (manuscriptFile) {
         setUploadProgress(20);
-        const fileName = `manuscripts/${user.id}/${Date.now()}-${manuscriptFile.name}`;
-        fileUrl = await uploadFile(manuscriptFile, 'manuscripts', fileName);
-        setUploadProgress(40);
+        filePath = `${user.id}/${Date.now()}-${manuscriptFile.name}`;
+        console.log('Uploading manuscript file...');
+        fileUrl = await uploadFileToStorage(manuscriptFile, 'manuscripts', filePath);
+        setUploadProgress(50);
+        console.log('Manuscript file uploaded:', fileUrl);
       }
       
       // Upload cover image if provided
       if (coverImage) {
-        setUploadProgress(60);
-        const coverFileName = `covers/${user.id}/${Date.now()}-${coverImage.name}`;
-        coverUrl = await uploadFile(coverImage, 'covers', coverFileName);
         setUploadProgress(70);
+        coverPath = `${user.id}/${Date.now()}-${coverImage.name}`;
+        console.log('Uploading cover image...');
+        coverUrl = await uploadFileToStorage(coverImage, 'covers', coverPath);
+        setUploadProgress(85);
+        console.log('Cover image uploaded:', coverUrl);
       }
       
-      setUploadProgress(80);
+      setUploadProgress(90);
       
-      // Prepare manuscript data
+      // Prepare manuscript data matching database schema
       const manuscriptData = {
         title: title.trim(),
         genre: genre,
@@ -181,14 +198,17 @@ const UploadScript: React.FC = () => {
         deadline: deadline ? new Date(deadline).toISOString() : null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        // Additional fields for tracking
-        file_url: fileUrl,
-        cover_url: coverUrl,
+        // File storage paths/URLs matching database schema
+        content_url: fileUrl,
+        file_url: fileUrl, // Keep both for compatibility
+        cover_image_url: coverUrl,
         google_docs_link: docsLink.trim() || null,
-        description: description.trim() || null
+        synopsis: description.trim() || null, // Database uses 'synopsis' not 'description'
+        description: description.trim() || null,
+        original_filename: manuscriptFile?.name || null
       };
 
-      console.log('Submitting manuscript:', manuscriptData);
+      console.log('Submitting manuscript data:', manuscriptData);
 
       // Save to Supabase
       const { data, error } = await supabase
@@ -198,7 +218,23 @@ const UploadScript: React.FC = () => {
         .single();
 
       if (error) {
-        console.error('Supabase error:', error);
+        console.error('Database insert error:', error);
+        
+        // Clean up uploaded files if database insert fails
+        if (filePath && manuscriptFile) {
+          try {
+            await supabase.storage.from('manuscripts').remove([filePath]);
+          } catch (cleanupError) {
+            console.warn('Failed to cleanup manuscript file:', cleanupError);
+          }
+        }
+        if (coverPath && coverImage) {
+          try {
+            await supabase.storage.from('covers').remove([coverPath]);
+          } catch (cleanupError) {
+            console.warn('Failed to cleanup cover file:', cleanupError);
+          }
+        }
         
         // Provide specific error messages
         if (error.code === 'PGRST116') {
@@ -217,7 +253,7 @@ const UploadScript: React.FC = () => {
 
       setUploadProgress(100);
       
-      toast.success("Script uploaded successfully!");
+      toast.success("Script uploaded successfully! Redirecting to payment...");
       
       // Reset form
       setTitle("");
@@ -230,17 +266,20 @@ const UploadScript: React.FC = () => {
       setWordCount("");
       setDeadline("");
       
-      // Redirect to My Scripts page after a short delay
+      // Redirect to payment page with manuscript ID after a short delay
       setTimeout(() => {
-        window.location.href = '/my-scripts';
+        window.location.href = `/payments?manuscript_id=${data.id}&word_count=${parseInt(wordCount) || 0}`;
       }, 1500);
       
     } catch (error: any) {
       console.error('Error in handleSubmit:', error);
+      
       if (error.message?.includes('storage')) {
         toast.error("File upload failed. Please check your file size and format.");
+      } else if (error.message?.includes('network')) {
+        toast.error("Network error. Please check your connection and try again.");
       } else {
-        toast.error("An unexpected error occurred. Please try again.");
+        toast.error(`Upload failed: ${error.message || 'An unexpected error occurred'}`);
       }
     } finally {
       setIsUploading(false);

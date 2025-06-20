@@ -129,51 +129,51 @@ const WriterDashboard: React.FC = () => {
                 </Button>
               </div>
             ) : (
-              <div className="space-y-4">
-                {recentScripts.map((script) => (
-                  <div key={script.id} className="flex items-center gap-4 p-3 rounded-lg hover:bg-muted/50 transition-colors">
-                    <div className="flex-shrink-0">
-                      <BookOpen className="text-writer-primary" size={24} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-medium truncate">{script.title}</h4>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span 
-                          className={`text-xs px-2 py-1 rounded-full ${
-                            script.status === "Published" 
-                              ? "bg-success/20 text-success" 
-                              : script.status === "In Review" 
-                                ? "bg-amber-500/20 text-amber-700" 
-                                : "bg-blue-500/20 text-blue-700"
-                          }`}
-                        >
-                          {script.status}
-                        </span>
-                        <div className="flex-1 progress-bar">
-                          <div 
-                            className="progress-value"
-                            style={{ width: `${script.progress}%` }} 
-                          />
-                        </div>
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">
-                          {script.progress}%
-                        </span>
+            <div className="space-y-4">
+              {recentScripts.map((script) => (
+                <div key={script.id} className="flex items-center gap-4 p-3 rounded-lg hover:bg-muted/50 transition-colors">
+                  <div className="flex-shrink-0">
+                    <BookOpen className="text-writer-primary" size={24} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-medium truncate">{script.title}</h4>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span 
+                        className={`text-xs px-2 py-1 rounded-full ${
+                          script.status === "Published" 
+                            ? "bg-success/20 text-success" 
+                            : script.status === "In Review" 
+                              ? "bg-amber-500/20 text-amber-700" 
+                              : "bg-blue-500/20 text-blue-700"
+                        }`}
+                      >
+                        {script.status}
+                      </span>
+                      <div className="flex-1 progress-bar">
+                        <div 
+                          className="progress-value"
+                          style={{ width: `${script.progress}%` }} 
+                        />
                       </div>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {script.progress}%
+                      </span>
                     </div>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
+            </div>
             )}
           </CardContent>
           {recentScripts.length > 0 && (
-            <CardFooter>
-              <Button asChild variant="ghost" className="gap-2">
-                <Link to="/my-scripts">
-                  <span>View All Scripts</span>
-                  <TrendingUp size={16} />
-                </Link>
-              </Button>
-            </CardFooter>
+          <CardFooter>
+            <Button asChild variant="ghost" className="gap-2">
+              <Link to="/my-scripts">
+                <span>View All Scripts</span>
+                <TrendingUp size={16} />
+              </Link>
+            </Button>
+          </CardFooter>
           )}
         </Card>
 

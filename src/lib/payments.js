@@ -4,13 +4,13 @@ import config from './config.js';
 const PAYSTACK_PUBLIC_KEY = config.paystack?.publicKey || import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
 const PAYSTACK_SECRET_KEY = config.paystack?.secretKey || import.meta.env.VITE_PAYSTACK_SECRET_KEY;
 
-// Validate environment variables
-if (!PAYSTACK_PUBLIC_KEY) {
-  console.error('Paystack public key is not configured');
+// Validate environment variables (only warn in development)
+if (!PAYSTACK_PUBLIC_KEY && import.meta.env.MODE === 'development') {
+  console.warn('⚠️ Paystack public key is not configured. Check your .env.local file.');
 }
 
-if (!PAYSTACK_SECRET_KEY) {
-  console.error('Paystack secret key is not configured');
+if (!PAYSTACK_SECRET_KEY && import.meta.env.MODE === 'development') {
+  console.warn('⚠️ Paystack secret key is not configured. Check your .env.local file.');
 }
 
 // Helper function to generate a unique transaction reference
@@ -32,6 +32,60 @@ export const convertCurrency = (amount, fromCurrency, toCurrency) => {
   
   const usdAmount = amount / exchangeRates[fromCurrency];
   return usdAmount * exchangeRates[toCurrency];
+};
+
+// Word count-based pricing slabs
+export const EDITING_PRICE_SLABS = {
+  BASIC: {
+    name: 'Basic Editing',
+    wordCountRange: [0, 15000],
+    description: 'Up to 15,000 words',
+    price: {
+      NGN: 25000,
+      USD: 15,
+      KES: 2250,
+      GHS: 240
+    }
+  },
+  STANDARD: {
+    name: 'Standard Editing',
+    wordCountRange: [15001, 40000],
+    description: '15,001 - 40,000 words',
+    price: {
+      NGN: 50000,
+      USD: 30,
+      KES: 4500,
+      GHS: 480
+    }
+  },
+  PREMIUM: {
+    name: 'Premium Editing',
+    wordCountRange: [40001, Infinity],
+    description: 'Over 40,000 words',
+    price: {
+      NGN: 85000,
+      USD: 50,
+      KES: 7500,
+      GHS: 800
+    }
+  }
+};
+
+// Get pricing slab based on word count
+export const getPricingSlab = (wordCount) => {
+  if (wordCount <= 15000) {
+    return EDITING_PRICE_SLABS.BASIC;
+  } else if (wordCount <= 40000) {
+    return EDITING_PRICE_SLABS.STANDARD;
+  } else {
+    return EDITING_PRICE_SLABS.PREMIUM;
+  }
+};
+
+// Get editing price for word count and currency
+export const getEditingPrice = (wordCount, currency = 'NGN') => {
+  const slab = getPricingSlab(wordCount);
+  return slab.price[currency] || slab.price.NGN;
 };
 
 // Convert amount to kobo (Paystack uses kobo as the smallest unit for NGN)

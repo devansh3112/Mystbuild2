@@ -192,7 +192,7 @@ export const useAdminData = (options = {}) => {
           .from('manuscripts')
           .select(`
             *,
-            profiles:author_id(*)
+            profiles:author_id(id, name, role)
           `)
           .order('submission_date', { ascending: false })
           .limit(10);
@@ -209,7 +209,7 @@ export const useAdminData = (options = {}) => {
           .from('editor_metrics')
           .select(`
             *,
-            profiles:editor_id(*)
+            profiles:editor_id(id, name, role)
           `)
           .order('month', { ascending: false });
 

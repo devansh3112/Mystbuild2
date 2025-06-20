@@ -1,364 +1,444 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
-import { useAuth } from "@/contexts/AuthContext";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabaseClient";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { DollarSign, Users } from "lucide-react";
+import { 
+  BookOpen, 
+  Search, 
+  Filter, 
+  DollarSign, 
+  Calendar, 
+  User, 
+  FileText, 
+  ShoppingCart,
+  Star,
+  Eye,
+  Download,
+  CheckCircle,
+  Clock,
+  AlertTriangle
+} from "lucide-react";
+import { getEditingPrice, getPricingSlab } from "@/lib/payments";
 
 interface Manuscript {
   id: string;
-  writerId: string;
-  writerName: string;
   title: string;
   synopsis: string;
   genre: string;
-  wordCount: number;
-  askingPrice: number;
-  dateAdded: string;
-}
-
-interface OwnedManuscript {
-  id: string;
-  writerId: string;
-  writerName: string;
-  title: string;
-  synopsis: string;
-  genre: string;
-  wordCount: number;
-  purchasePrice: number;
-  dateAcquired: string;
-  status: "acquired" | "editing" | "completed";
-  editorAssigned?: {
-    id: string;
+  word_count: number;
+  status: string;
+  payment_status: string;
+  created_at: string;
+  author_id: string;
+  cover_image_url?: string;
+  content_url?: string;
+  profiles: {
     name: string;
-    fee: number;
+    avatar_url?: string;
   };
-  editorOffers: EditorOffer[];
 }
-
-interface EditorOffer {
-  id: string;
-  editorId: string;
-  editorName: string;
-  fee: number;
-  message: string;
-  date: string;
-}
-
-const sampleMarketplace: Manuscript[] = [
-  {
-    id: "m1",
-    writerId: "w1",
-    writerName: "Sarah Johnson",
-    title: "The Haunting of Elmwood Manor",
-    synopsis: "A gothic tale of mystery and suspense in an old New England mansion.",
-    genre: "Mystery",
-    wordCount: 85000,
-    askingPrice: 2500,
-    dateAdded: "2025-04-15"
-  },
-  {
-    id: "m3",
-    writerId: "w3",
-    writerName: "James Liu",
-    title: "Echoes of Yesterday",
-    synopsis: "A historical fiction set during the 1920s jazz age.",
-    genre: "Historical Fiction",
-    wordCount: 95000,
-    askingPrice: 3200,
-    dateAdded: "2025-05-10"
-  }
-];
-
-const sampleOwnedManuscripts: OwnedManuscript[] = [
-  {
-    id: "om1",
-    writerId: "w2",
-    writerName: "Alex Rivera",
-    title: "Shadows in the Deep",
-    synopsis: "A thriller set on a remote research vessel in the Arctic.",
-    genre: "Thriller",
-    wordCount: 78000,
-    purchasePrice: 2800,
-    dateAcquired: "2025-04-01",
-    status: "acquired",
-    editorOffers: [
-      {
-        id: "eo1",
-        editorId: "e1",
-        editorName: "Mark Davis",
-        fee: 1200,
-        message: "I specialize in thrillers and have edited three bestsellers in this genre.",
-        date: "2025-05-12"
-      }
-    ]
-  }
-];
 
 const PublisherMarketplace: React.FC = () => {
   const { user } = useAuth();
-  
-  const [marketplace, setMarketplace] = useState<Manuscript[]>(sampleMarketplace);
-  const [ownedManuscripts, setOwnedManuscripts] = useState<OwnedManuscript[]>(sampleOwnedManuscripts);
+  const [manuscripts, setManuscripts] = useState<Manuscript[]>([]);
+  const [filteredManuscripts, setFilteredManuscripts] = useState<Manuscript[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [genreFilter, setGenreFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [selectedManuscript, setSelectedManuscript] = useState<Manuscript | null>(null);
-  const [offerAmount, setOfferAmount] = useState<number>(0);
-  const [offerMessage, setOfferMessage] = useState<string>("");
-  const [showOfferDialog, setShowOfferDialog] = useState<boolean>(false);
+  const [showPurchaseDialog, setShowPurchaseDialog] = useState(false);
+  const [purchasing, setPurchasing] = useState(false);
 
-  const makeOffer = (manuscript: Manuscript) => {
+  useEffect(() => {
+    fetchAvailableManuscripts();
+  }, []);
+
+  useEffect(() => {
+    filterManuscripts();
+  }, [manuscripts, searchTerm, genreFilter, statusFilter]);
+
+  const fetchAvailableManuscripts = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch manuscripts that are available for purchase by publishers
+      // These should be manuscripts where payment_status is 'paid' but not yet owned by this publisher
+      const { data, error } = await supabase
+        .from('manuscripts')
+        .select(`
+          *,
+          profiles!manuscripts_author_id_fkey(name, avatar_url)
+        `)
+        .eq('payment_status', 'paid')
+        .neq('author_id', user?.id) // Don't show publisher's own manuscripts
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Filter out manuscripts already purchased by this publisher
+      const { data: purchases } = await supabase
+        .from('publisher_purchases')
+        .select('manuscript_id')
+        .eq('publisher_id', user?.id);
+
+      const purchasedIds = purchases?.map(p => p.manuscript_id) || [];
+      const availableManuscripts = (data || []).filter(m => !purchasedIds.includes(m.id));
+
+      setManuscripts(availableManuscripts);
+    } catch (error) {
+      console.error('Error fetching manuscripts:', error);
+      toast.error('Failed to load marketplace manuscripts');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filterManuscripts = () => {
+    let filtered = manuscripts;
+
+    // Search filter
+    if (searchTerm) {
+      filtered = filtered.filter(m => 
+        m.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        m.synopsis?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        m.profiles?.name.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    // Genre filter
+    if (genreFilter !== "all") {
+      filtered = filtered.filter(m => m.genre === genreFilter);
+    }
+
+    // Status filter
+    if (statusFilter !== "all") {
+      filtered = filtered.filter(m => m.status === statusFilter);
+    }
+
+    setFilteredManuscripts(filtered);
+  };
+
+  const handlePurchaseManuscript = async (manuscript: Manuscript) => {
     setSelectedManuscript(manuscript);
-    setOfferAmount(manuscript.askingPrice);
-    setOfferMessage("");
-    setShowOfferDialog(true);
+    setShowPurchaseDialog(true);
   };
 
-  const submitOffer = () => {
-    toast({
-      title: "Offer Submitted",
-      description: `You've made an offer on "${selectedManuscript?.title}".`
-    });
-    setShowOfferDialog(false);
+  const confirmPurchase = async () => {
+    if (!selectedManuscript) return;
+
+    try {
+      setPurchasing(true);
+
+      // Create purchase record
+      const { error: purchaseError } = await supabase
+        .from('publisher_purchases')
+        .insert({
+          publisher_id: user?.id,
+          manuscript_id: selectedManuscript.id,
+          purchase_price: getEditingPrice(selectedManuscript.word_count, 'NGN'),
+          purchase_date: new Date().toISOString(),
+          status: 'purchased'
+        });
+
+      if (purchaseError) throw purchaseError;
+
+      // Update manuscript status
+      const { error: updateError } = await supabase
+        .from('manuscripts')
+        .update({ 
+          status: 'purchased_by_publisher',
+          publisher_id: user?.id 
+        })
+        .eq('id', selectedManuscript.id);
+
+      if (updateError) throw updateError;
+
+      toast.success(`Successfully purchased "${selectedManuscript.title}"!`);
+      setShowPurchaseDialog(false);
+      setSelectedManuscript(null);
+      
+      // Refresh the marketplace
+      fetchAvailableManuscripts();
+
+    } catch (error) {
+      console.error('Error purchasing manuscript:', error);
+      toast.error('Failed to purchase manuscript');
+    } finally {
+      setPurchasing(false);
+    }
   };
 
-  const acceptEditorOffer = (manuscriptId: string, offer: EditorOffer) => {
-    setOwnedManuscripts(ownedManuscripts.map(m => 
-      m.id === manuscriptId 
-        ? { 
-            ...m, 
-            status: "editing", 
-            editorAssigned: {
-              id: offer.editorId,
-              name: offer.editorName,
-              fee: offer.fee
-            },
-            editorOffers: [] 
-          } 
-        : m
-    ));
-    
-    toast({
-      title: "Editor Assigned",
-      description: `${offer.editorName} has been assigned to edit "${
-        ownedManuscripts.find(m => m.id === manuscriptId)?.title
-      }".`
-    });
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <Badge variant="secondary" className="bg-green-100 text-green-800">Completed</Badge>;
+      case 'editing':
+        return <Badge variant="secondary" className="bg-blue-100 text-blue-800">In Editing</Badge>;
+      case 'payment_received':
+        return <Badge variant="secondary" className="bg-orange-100 text-orange-800">Ready</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
   };
 
-  const listForEditing = (manuscriptId: string) => {
-    toast.success("Your manuscript is now listed for editors to apply.");
-  };
-
-  if (!user) return null;
+  const genres = [...new Set(manuscripts.map(m => m.genre))];
 
   return (
     <DashboardLayout role="publisher">
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-playfair">Publisher Marketplace</h1>
-          <p className="text-muted-foreground mt-1">Find manuscripts and assign editors</p>
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Manuscript Marketplace</h1>
+            <p className="text-muted-foreground">Discover and purchase manuscripts from talented writers</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-primary">
+              {filteredManuscripts.length} Available
+            </Badge>
+          </div>
         </div>
 
+        {/* Filters */}
         <Card>
           <CardHeader>
-            <CardTitle>Available Manuscripts</CardTitle>
-            <CardDescription>Browse manuscripts from writers</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <Filter className="h-5 w-5" />
+              Search & Filter
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Author</TableHead>
-                  <TableHead>Genre</TableHead>
-                  <TableHead>Word Count</TableHead>
-                  <TableHead>Price</TableHead>
-                  <TableHead>Date Listed</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {marketplace.map((manuscript) => (
-                  <TableRow key={manuscript.id}>
-                    <TableCell className="font-medium">{manuscript.title}</TableCell>
-                    <TableCell>{manuscript.writerName}</TableCell>
-                    <TableCell>{manuscript.genre}</TableCell>
-                    <TableCell>{manuscript.wordCount}</TableCell>
-                    <TableCell>${manuscript.askingPrice}</TableCell>
-                    <TableCell>{new Date(manuscript.dateAdded).toLocaleDateString()}</TableCell>
-                    <TableCell className="text-right">
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => makeOffer(manuscript)}
-                      >
-                        Make Offer
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search manuscripts..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              
+              <Select value={genreFilter} onValueChange={setGenreFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Genres" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Genres</SelectItem>
+                  {genres.map(genre => (
+                    <SelectItem key={genre} value={genre}>{genre}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="payment_received">Ready to Edit</SelectItem>
+                  <SelectItem value="editing">In Editing</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setSearchTerm("");
+                  setGenreFilter("all");
+                  setStatusFilter("all");
+                }}
+              >
+                Clear Filters
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>My Acquisitions</CardTitle>
-            <CardDescription>Manage manuscripts you've purchased</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Author</TableHead>
-                  <TableHead>Genre</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Purchase Price</TableHead>
-                  <TableHead>Editor</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {ownedManuscripts.map((manuscript) => (
-                  <TableRow key={manuscript.id}>
-                    <TableCell className="font-medium">{manuscript.title}</TableCell>
-                    <TableCell>{manuscript.writerName}</TableCell>
-                    <TableCell>{manuscript.genre}</TableCell>
-                    <TableCell>
-                      <Badge className={
-                        manuscript.status === "acquired" ? "bg-blue-500" :
-                        manuscript.status === "editing" ? "bg-amber-500" :
-                        "bg-green-500"
-                      }>
-                        {manuscript.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>${manuscript.purchasePrice}</TableCell>
-                    <TableCell>
-                      {manuscript.editorAssigned ? manuscript.editorAssigned.name : "Not assigned"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {manuscript.status === "acquired" && (
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => listForEditing(manuscript.id)}
-                        >
-                          Find Editor
-                        </Button>
-                      )}
-                      {manuscript.status === "editing" && (
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                        >
-                          View Progress
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        {ownedManuscripts.some(m => m.editorOffers.length > 0) && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Editor Applications</CardTitle>
-              <CardDescription>Review and select editors for your manuscripts</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {ownedManuscripts.map(manuscript => 
-                manuscript.editorOffers.length > 0 && (
-                  <div key={manuscript.id} className="mb-6 border rounded-lg p-4">
-                    <h3 className="text-lg font-semibold mb-2">
-                      Applications for "{manuscript.title}"
-                    </h3>
-                    {manuscript.editorOffers.map(offer => (
-                      <div key={offer.id} className="border-l-4 border-admin-primary pl-4 mb-4">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-medium">{offer.editorName}</p>
-                            <p className="text-sm text-muted-foreground">
-                              Applied on {new Date(offer.date).toLocaleDateString()}
-                            </p>
-                            <p className="mt-2">{offer.message}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-lg font-bold flex items-center">
-                              <DollarSign size={18} className="mr-1" />
-                              {offer.fee}
-                            </p>
-                            <Button 
-                              size="sm" 
-                              className="mt-2 bg-admin-primary hover:bg-admin-primary/90"
-                              onClick={() => acceptEditorOffer(manuscript.id, offer)}
-                            >
-                              Hire Editor
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+        {/* Manuscripts Grid */}
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3, 4, 5, 6].map(i => (
+              <Card key={i} className="animate-pulse">
+                <CardHeader>
+                  <div className="h-4 bg-muted rounded w-3/4"></div>
+                  <div className="h-3 bg-muted rounded w-1/2"></div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="h-3 bg-muted rounded"></div>
+                    <div className="h-3 bg-muted rounded w-5/6"></div>
                   </div>
-                )
-              )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : filteredManuscripts.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <BookOpen className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No manuscripts found</h3>
+              <p className="text-muted-foreground">
+                {searchTerm || genreFilter !== "all" || statusFilter !== "all" 
+                  ? "Try adjusting your search criteria"
+                  : "No manuscripts are currently available for purchase"
+                }
+              </p>
             </CardContent>
           </Card>
-        )}
-      </div>
-
-      <Dialog open={showOfferDialog} onOpenChange={setShowOfferDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Make an Offer</DialogTitle>
-            <DialogDescription>
-              Submit your offer for "{selectedManuscript?.title}" by {selectedManuscript?.writerName}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="amount">Offer Amount ($)</Label>
-              <Input 
-                id="amount" 
-                type="number" 
-                value={offerAmount}
-                onChange={(e) => setOfferAmount(parseInt(e.target.value))}
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredManuscripts.map((manuscript) => (
+              <ManuscriptCard 
+                key={manuscript.id} 
+                manuscript={manuscript} 
+                onPurchase={handlePurchaseManuscript}
               />
-              <p className="text-sm text-muted-foreground">
-                Asking price: ${selectedManuscript?.askingPrice}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="message">Message to Writer</Label>
-              <Textarea 
-                id="message" 
-                placeholder="Tell the writer why you're interested in their manuscript..."
-                value={offerMessage}
-                onChange={(e) => setOfferMessage(e.target.value)}
-                rows={4}
-              />
-            </div>
+            ))}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowOfferDialog(false)}>Cancel</Button>
-            <Button onClick={submitOffer} className="bg-admin-primary hover:bg-admin-primary/90">
-              Submit Offer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        )}
+
+        {/* Purchase Confirmation Dialog */}
+        <Dialog open={showPurchaseDialog} onOpenChange={setShowPurchaseDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Purchase Manuscript</DialogTitle>
+              <DialogDescription>
+                Confirm your purchase of "{selectedManuscript?.title}"
+              </DialogDescription>
+            </DialogHeader>
+            
+            {selectedManuscript && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="font-medium">Author:</span>
+                    <div>{selectedManuscript.profiles?.name}</div>
+                  </div>
+                  <div>
+                    <span className="font-medium">Genre:</span>
+                    <div>{selectedManuscript.genre}</div>
+                  </div>
+                  <div>
+                    <span className="font-medium">Word Count:</span>
+                    <div>{selectedManuscript.word_count?.toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <span className="font-medium">Purchase Price:</span>
+                    <div className="text-lg font-bold text-primary">
+                      ₦{getEditingPrice(selectedManuscript.word_count || 0, 'NGN').toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="p-4 bg-muted rounded-lg">
+                  <h4 className="font-medium mb-2">What you'll get:</h4>
+                  <ul className="text-sm space-y-1">
+                    <li>• Full manuscript access and ownership rights</li>
+                    <li>• Ability to assign editors from your team</li>
+                    <li>• Complete publishing rights</li>
+                    <li>• Progress tracking and management tools</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button 
+                variant="outline" 
+                onClick={() => setShowPurchaseDialog(false)}
+                disabled={purchasing}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={confirmPurchase}
+                disabled={purchasing}
+                className="bg-primary text-primary-foreground"
+              >
+                {purchasing ? "Processing..." : "Confirm Purchase"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
     </DashboardLayout>
+  );
+};
+
+const ManuscriptCard: React.FC<{ 
+  manuscript: Manuscript; 
+  onPurchase: (manuscript: Manuscript) => void;
+}> = ({ manuscript, onPurchase }) => {
+  const slab = getPricingSlab(manuscript.word_count || 0);
+  const price = getEditingPrice(manuscript.word_count || 0, 'NGN');
+
+  return (
+    <Card className="hover:shadow-lg transition-shadow">
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <CardTitle className="line-clamp-2">{manuscript.title}</CardTitle>
+            <CardDescription className="flex items-center gap-2 mt-1">
+              <User className="h-3 w-3" />
+              {manuscript.profiles?.name}
+            </CardDescription>
+          </div>
+          <div className="text-right">
+            <div className="text-lg font-bold text-primary">₦{price.toLocaleString()}</div>
+            <div className="text-xs text-muted-foreground">{slab.name}</div>
+          </div>
+        </div>
+      </CardHeader>
+      
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          <div className="flex items-center gap-1">
+            <FileText className="h-3 w-3" />
+            {manuscript.word_count?.toLocaleString()} words
+          </div>
+          <Badge variant="outline">{manuscript.genre}</Badge>
+        </div>
+
+        {manuscript.synopsis && (
+          <p className="text-sm text-muted-foreground line-clamp-3">
+            {manuscript.synopsis}
+          </p>
+        )}
+
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-3 w-3 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">
+              {new Date(manuscript.created_at).toLocaleDateString()}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <CheckCircle className="h-3 w-3 text-green-500" />
+            <span className="text-xs text-green-600">Payment Verified</span>
+          </div>
+        </div>
+
+        <Button 
+          onClick={() => onPurchase(manuscript)}
+          className="w-full"
+          size="sm"
+        >
+          <ShoppingCart className="h-4 w-4 mr-2" />
+          Purchase Manuscript
+        </Button>
+      </CardContent>
+    </Card>
   );
 };
 

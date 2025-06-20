@@ -8,6 +8,7 @@ import AuthLoading from "@/components/AuthLoading";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
+import EditorSignup from "./pages/EditorSignup";
 import ResetPassword from "./pages/ResetPassword";
 import WriterDashboard from "./pages/WriterDashboard";
 import EditorDashboard from "./pages/EditorDashboard";
@@ -107,13 +108,15 @@ const AppRoutes = () => {
   
   // Automatic redirection based on auth state
   useEffect(() => {
+    console.log('AppRoutes auth check:', { loading, isAuthenticated, pathname: location.pathname, user });
     if (!loading) {
       // If authenticated and at login/signup page, redirect to dashboard
       if (isAuthenticated && ['/login', '/signup', '/'].includes(location.pathname)) {
+        console.log('Redirecting to dashboard from:', location.pathname);
         navigate('/dashboard', { replace: true });
       }
     }
-  }, [loading, isAuthenticated, location.pathname, navigate]);
+  }, [loading, isAuthenticated, location.pathname, navigate, user]);
   
   // Show loading state during initial auth check
   if (loading && !isAuthenticated) {
@@ -128,6 +131,7 @@ const AppRoutes = () => {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/editor-signup" element={<EditorSignup />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route 
         path="/dashboard" 

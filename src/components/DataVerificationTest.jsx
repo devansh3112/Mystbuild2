@@ -26,7 +26,7 @@ const DataVerificationTest = () => {
             status,
             word_count,
             submission_date,
-            profiles:author_id (name, role)
+            profiles:author_id (id, name, role)
           `)
           .limit(10);
 

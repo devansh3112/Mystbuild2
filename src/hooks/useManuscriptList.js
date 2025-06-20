@@ -40,7 +40,7 @@ export const useManuscriptList = (options = {}) => {
         // Simplified query - let's start with just the basic manuscript data
         let query = supabase.from('manuscripts').select(`
           *,
-          profiles:author_id(name)
+          profiles:author_id(id, name, role)
         `);
         
         // Apply role-specific filters

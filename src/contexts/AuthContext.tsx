@@ -34,9 +34,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Function to fetch user profile data
   const fetchUserProfile = async (userId: string): Promise<User | null> => {
     try {
+      console.log('Fetching profile for user:', userId);
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, name, role, avatar_url, balance')
         .eq('id', userId)
         .single();
 
@@ -52,13 +53,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (!data) return null;
 
+      console.log('Profile fetched successfully:', data);
       return {
         id: data.id,
         name: data.name,
         email: session?.user.email || '',
         role: data.role,
         avatar: data.avatar_url,
-        balance: data.balance
+        balance: data.balance || 0
       };
     } catch (error) {
       console.error('Profile fetch error:', error);
@@ -69,17 +71,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Function to create profile for verified users
   const createProfileForVerifiedUser = async (userId: string, email: string) => {
     try {
+      // Get user metadata to retrieve the role they selected at signup
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      let selectedRole: UserRole = 'writer'; // fallback default
+      
+      if (userData?.user?.user_metadata?.role) {
+        selectedRole = userData.user.user_metadata.role as UserRole;
+      }
+
       const { error } = await supabase
         .from('profiles')
         .insert([
           {
             id: userId,
             name: email.split('@')[0], // Use email prefix as default name
-            role: 'writer', // Default role
+            role: selectedRole, // Use the role from metadata
             avatar_url: `https://i.pravatar.cc/150?u=${email}`,
             balance: 0
           }
         ]);
+
+      // Handle conflicts (profile already exists) - this is not an error
+      if (error && error.code === '23505') {
+        console.log('Profile already exists for user:', userId);
+        return await fetchUserProfile(userId);
+      }
 
       if (error) {
         console.error('Error creating profile for verified user:', error);
@@ -101,7 +117,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       try {
         // Get current session
-        const { data: sessionData } = await supabase.auth.getSession();
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        
+        // If there's a session error (like invalid refresh token), sign out
+        if (sessionError) {
+          console.log('Session error, signing out:', sessionError);
+          await supabase.auth.signOut();
+          setSession(null);
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+        
         setSession(sessionData.session);
         
         // If we have a session, fetch the user profile
@@ -111,6 +138,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
       } catch (error) {
         console.error('Auth initialization error:', error);
+        // Clear any stale auth state
+        setSession(null);
+        setUser(null);
       } finally {
         setLoading(false);
       }
@@ -172,10 +202,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signup = async (name: string, email: string, password: string, role: UserRole = "writer"): Promise<void> => {
     try {
-      // 1. Create the auth user
+      // 1. Create the auth user with role stored in metadata
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: {
+            name: name,
+            role: role
+          }
+        }
       });
 
       if (error) {
@@ -189,6 +225,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Check if email confirmation is required
       if (!data.session) {
         // Email confirmation is required - don't create profile yet
+        // The role is now stored in user metadata and will be used later
         throw new Error("VERIFICATION_REQUIRED");
       }
 
@@ -205,7 +242,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
         ]);
 
-      if (profileError) {
+      // Handle conflicts (profile already exists) - this is not an error
+      if (profileError && profileError.code === '23505') {
+        console.log('Profile already exists for user:', data.user.id);
+      } else if (profileError) {
         console.error('Error creating profile:', profileError);
         // If profile creation fails, we should try to delete the auth user
         // but continue since the auth signup succeeded
@@ -277,10 +317,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
-export const useAuth = () => {
+// Use named export to fix hot reload issues
+function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
-};
+}
+
+export { useAuth };

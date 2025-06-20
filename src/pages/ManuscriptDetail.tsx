@@ -104,10 +104,7 @@ const ManuscriptDetail: React.FC = () => {
     const result = await updateChapterStatus(chapterId, newStatus);
     
     if (result.success) {
-      toast({
-        title: "Chapter Updated",
-        description: `Chapter status changed to ${newStatus}`,
-      });
+      toast.success(`Chapter status changed to ${newStatus}`);
       // Optionally refresh the data here
     } else {
       toast.error(result.error);
@@ -122,10 +119,7 @@ const ManuscriptDetail: React.FC = () => {
     
     if (result.success) {
       const selectedEditor = editors.find(e => e.id === editorId);
-      toast({
-        title: "Editor Assigned",
-        description: `${selectedEditor?.name} has been assigned to this manuscript`,
-      });
+      toast.success(`${selectedEditor?.name} has been assigned to this manuscript`);
       // Optionally refresh the data here
     } else {
       toast.error(result.error);
@@ -238,7 +232,7 @@ const ManuscriptDetail: React.FC = () => {
                     </Avatar>
                     <div>
                       <p className="font-medium">{manuscript.author.name}</p>
-                      <p className="text-sm text-muted-foreground">{manuscript.author.email}</p>
+                      <p className="text-sm text-muted-foreground">{user?.email || 'Email not available'}</p>
                     </div>
                   </div>
                   {manuscript.author.bio && (
@@ -269,7 +263,7 @@ const ManuscriptDetail: React.FC = () => {
                     </Avatar>
                     <div>
                       <p className="font-medium">{manuscript.editor.name}</p>
-                      <p className="text-sm text-muted-foreground">{manuscript.editor.email}</p>
+                                              <p className="text-sm text-muted-foreground">Editor assigned</p>
                     </div>
                   </div>
                   {manuscript.editor.bio && (

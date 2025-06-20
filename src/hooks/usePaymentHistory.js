@@ -19,7 +19,15 @@ export const usePaymentHistory = () => {
     try {
       const { data, error: fetchError } = await supabase
         .from('transactions')
-        .select('*')
+        .select(`
+          *,
+          manuscripts (
+            id,
+            title,
+            word_count,
+            status
+          )
+        `)
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -27,7 +35,15 @@ export const usePaymentHistory = () => {
         throw new Error(fetchError.message);
       }
 
-      setTransactions(data || []);
+      // Flatten manuscript data into transaction records
+      const enhancedTransactions = (data || []).map(transaction => ({
+        ...transaction,
+        manuscript_title: transaction.manuscripts?.title,
+        manuscript_word_count: transaction.manuscripts?.word_count,
+        manuscript_status: transaction.manuscripts?.status
+      }));
+
+      setTransactions(enhancedTransactions);
     } catch (err) {
       console.error('Error fetching transactions:', err);
       setError(err.message);
@@ -53,6 +69,7 @@ export const usePaymentHistory = () => {
         transaction_ref: transactionData.reference || transactionData.tx_ref,
         email: transactionData.email || user.email,
         phone: transactionData.phone || null,
+        manuscript_id: transactionData.manuscript_id || null,
         metadata: transactionData.metadata || {},
         created_at: new Date().toISOString()
       };
@@ -60,17 +77,33 @@ export const usePaymentHistory = () => {
       const { data, error: insertError } = await supabase
         .from('transactions')
         .insert([transaction])
-        .select()
+        .select(`
+          *,
+          manuscripts (
+            id,
+            title,
+            word_count,
+            status
+          )
+        `)
         .single();
 
       if (insertError) {
         throw new Error(insertError.message);
       }
 
+      // Enhance with manuscript data
+      const enhancedTransaction = {
+        ...data,
+        manuscript_title: data.manuscripts?.title,
+        manuscript_word_count: data.manuscripts?.word_count,
+        manuscript_status: data.manuscripts?.status
+      };
+
       // Add to local state
-      setTransactions(prev => [data, ...prev]);
+      setTransactions(prev => [enhancedTransaction, ...prev]);
       
-      return data;
+      return enhancedTransaction;
     } catch (err) {
       console.error('Error adding transaction:', err);
       setError(err.message);
